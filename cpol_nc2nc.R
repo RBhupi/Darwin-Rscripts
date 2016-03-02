@@ -46,18 +46,12 @@ while(length(flist_all)>0) {
 
     #read x y z dims
     x1<- ncvar_get(nc = infile, varid = "x")
-    #x_max1 <- ncvar_get(nc= infile, varid = "x_max")
-    #x_min1 <- ncvar_get(nc= infile, varid = "x_min")
     nx1 <- ncvar_get(nc= infile, varid = "nx")
 
     y1<- ncvar_get(nc = infile, varid = "y")
-    #y_max1 <- ncvar_get(nc= infile, varid = "y_max")
-    #y_min1 <- ncvar_get(nc= infile, varid = "y_min")
     ny1 <- ncvar_get(nc= infile, varid = "ny")
 
     z1<- ncvar_get(nc = infile, varid = "z")
-    #z_max1 <- ncvar_get(nc= infile, varid = "z_max")
-    #z_min1 <- ncvar_get(nc= infile, varid = "z_min")
     nz1 <- ncvar_get(nc= infile, varid = "nz")
 
     #read time from all teh files
@@ -104,23 +98,22 @@ while(length(flist_all)>0) {
         att<- unlist(ncatt_get(infile, varid=var, attname = "long_name"))
         ivar_longNames <- c(ivar_longNames, as.vector(att[2]))
     }
-    #close input file hear
-    nc_close(infile)
-
 
     # combin and rename
     ivar_df<-cbind(ivar_names, ivar_longNames)
     colnames(ivar_df) <- c("name", "longname")
 
+    #close input file hear
+    nc_close(infile)
 
-    #create all float netcdf variables at once using mlply
-    out_fvar_list <- mlply(.data = fvar_df, .fun = ncvar_def, units = "", dim = list(x_dim, y_dim, z_dim, t_dim), prec = "float",
-                           compression = 7, chunksizes = c(length(x1), length(y1), 1, 1), missval=-999.0)
+    # Now create all float netcdf variables at once using mlply
+    out_fvar_list <- mlply(.data = fvar_df, .fun = ncvar_def, units = "", dim = list(x_dim, y_dim, z_dim, t_dim),
+                           prec = "float", compression = 7, chunksizes = c(length(x1), length(y1), 1, 1), missval=-999.0)
 
 
-    # and also create integer variables the same way
-    out_ivar_list <- mlply(.data = ivar_df, .fun = ncvar_def, units = "", dim = list(x_dim, y_dim, z_dim, t_dim), prec = "integer",
-                           compression = 7, chunksizes = c(length(x1), length(y1), 1, 1), missval=-99)
+    # and also create integer variables the same way and save them in a single list
+    out_ivar_list <- mlply(.data = ivar_df, .fun = ncvar_def, units = "", dim = list(x_dim, y_dim, z_dim, t_dim),
+                           prec = "integer", compression = 7, chunksizes = c(length(x1), length(y1), 1, 1), missval=-99)
 
     out_var_list <- append(out_fvar_list, out_ivar_list)
 
