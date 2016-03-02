@@ -125,7 +125,6 @@ while(length(flist_all)>0) {
         #get the data from input netcdf and put all float variables in output file
         for(var in fvar_names){
             data <- ncvar_get(infile, varid = var)
-            #data <- replace(data, data==NA, -999.0)
             ncvar_put(nc = ofile, varid = var, vals = data, start = c(1, 1, 1, f),
                       count = c(length(x1), length(y1), length(z1), 1))
         }
@@ -133,7 +132,6 @@ while(length(flist_all)>0) {
         #get the data from input netcdf and put all integer variables in output file.
         for(var in ivar_names){
             data <- ncvar_get(infile, varid = var)
-            data <- replace(data, data==NA, -99)
             ncvar_put(nc = ofile, varid = var, vals = data, start = c(1, 1, 1, f),
                       count = c(length(x1), length(y1), length(z1), 1))
         }
