@@ -30,7 +30,7 @@ flist_all <- Sys.glob(paste(indir, fpat, sep=""))
 print(paste(length(flist_all), "file(s) in the folder."))
 
 while(length(flist_all)>0) {
-
+    #following code select files for the whole day
     firstFile <- flist_all[1] # this is first file
     fname_split <- unlist(strsplit(firstFile, "_")) #split the fileName
     date_str <- fname_split[length(fname_split)-1] #this is the date
@@ -39,18 +39,15 @@ while(length(flist_all)>0) {
     flist_all <- flist_all[!selectFiles] #remaining files are stored for next iteration
     print(paste(length(flist), "file(s) on the day", date_str))
 
-
-    #open netcdf file for reading dims
+    #open a netcdf file for reading dims
     infile <- nc_open(filename = flist[1])
 
     #read x y z dims
     x1<- ncvar_get(nc = infile, varid = "x")
-
     y1<- ncvar_get(nc = infile, varid = "y")
-
     z1<- ncvar_get(nc = infile, varid = "z")
 
-    #read time from all teh files
+    #read time from all the files
     time_seconds<- 86400 * laply(flist, ncread_time)
 
     #also read radar latlon
@@ -103,7 +100,6 @@ while(length(flist_all)>0) {
     out_fvar_list <- mlply(.data = fvar_df, .fun = ncvar_def, units = "", dim = list(x_dim, y_dim, z_dim, t_dim),
                            prec = "float", compression = 7, chunksizes = c(length(x1), length(y1), 1, 1), missval=-999.0)
 
-
     # and also create integer variables the same way and save them in a single list
     out_ivar_list <- mlply(.data = ivar_df, .fun = ncvar_def, units = "", dim = list(x_dim, y_dim, z_dim, t_dim),
                            prec = "integer", compression = 7, chunksizes = c(length(x1), length(y1), 1, 1), missval=-99)
@@ -147,7 +143,6 @@ while(length(flist_all)>0) {
 
     #close file
     nc_close(ofile)
-
 } # while loop ends
 
 print(proc.time()-start_t)
