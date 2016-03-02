@@ -53,18 +53,18 @@ while(length(flist_all)>0) {
 
     #read x y z dims
     x1<- ncvar_get(nc = infile, varid = "x")
-    x_max1 <- ncvar_get(nc= infile, varid = "x_max")
-    x_min1 <- ncvar_get(nc= infile, varid = "x_min")
+    #x_max1 <- ncvar_get(nc= infile, varid = "x_max")
+    #x_min1 <- ncvar_get(nc= infile, varid = "x_min")
     nx1 <- ncvar_get(nc= infile, varid = "nx")
 
     y1<- ncvar_get(nc = infile, varid = "y")
-    y_max1 <- ncvar_get(nc= infile, varid = "y_max")
-    y_min1 <- ncvar_get(nc= infile, varid = "y_min")
+    #y_max1 <- ncvar_get(nc= infile, varid = "y_max")
+    #y_min1 <- ncvar_get(nc= infile, varid = "y_min")
     ny1 <- ncvar_get(nc= infile, varid = "ny")
 
     z1<- ncvar_get(nc = infile, varid = "z")
-    z_max1 <- ncvar_get(nc= infile, varid = "z_max")
-    z_min1 <- ncvar_get(nc= infile, varid = "z_min")
+    #z_max1 <- ncvar_get(nc= infile, varid = "z_max")
+    #z_min1 <- ncvar_get(nc= infile, varid = "z_min")
     nz1 <- ncvar_get(nc= infile, varid = "nz")
 
     #read time from all teh files
@@ -77,15 +77,18 @@ while(length(flist_all)>0) {
     radar_lat1 <- ncvar_get(nc = infile, varid = "radar_latitude")
     radar_lon1 <- ncvar_get(nc = infile, varid = "radar_longitude")
 
-
     #------------------------- MAKING DIMS & DATA VARIABLES -----------------------#
     #make output dim variables for x, y, z
-    x_dim <- ncdim_def(name = "x", units = "km", vals = x1, longname = "distance from radar")
-    y_dim <- ncdim_def(name = "y", units = "km", vals = y1, longname = "distance from radar")
+    x_dim <- ncdim_def(name = "x", units = "km", vals = x1, longname = "distance from radar in zonal direction")
+    y_dim <- ncdim_def(name = "y", units = "km", vals = y1, longname = "distance from radar in meridional direction")
     z_dim <- ncdim_def(name = "z", units = "km", vals = z1, longname = "altitude")
     t_dim <- ncdim_def(name = "time", units = "seconds since 1970-01-01 00:00:00 UTC", calendar = "gregorian",
                        vals= time_seconds, longname = "Time of the scan", unlim = TRUE)
 
+    #also make radar lat-lon variables
+    radar_lat <- ncvar_def(name = "radar_latitude", units = "degrees_north", dim = list(), prec = "float")
+    radar_lon <- ncvar_def(name = "radar_longitude", units = "degrees_east", dim = list(), prec = "float")
+    radar_latlon_var <- list(radar_lat, radar_lon)
 
     #This is the list of important "float" variables in the file to read and write
     fvar_names <- c("zh", "vr", "ve", "sw", "zd", "ps", "rs", "kd", "rr", "do", "nw")
@@ -126,11 +129,17 @@ while(length(flist_all)>0) {
     out_ivar_list <- mlply(.data = ivar_df, .fun = ncvar_def, units = "", dim = list(x_dim, y_dim, z_dim, t_dim), prec = "integer",
                            compression = 7, chunksizes = c(length(x1), length(y1), 1, 1), missval=-99)
 
+    out_var_list <- append(out_fvar_list, out_ivar_list)
+
     #------------------------------- WRITING TO THE FILE --------------------------#
     #open output netcdf file
     outfName <- str_replace(flist[1], pattern = "_0000.nc", ".nc")
     outfPath <- paste(outdir, basename(outfName), sep="")
-    ofile <- nc_create(filename = outfPath, vars =append(out_fvar_list, out_ivar_list))
+    ofile <- nc_create(filename = outfPath, vars =append(out_var_list, radar_latlon_var))
+
+    #write radar lat-lon to the file
+    ncvar_put(nc=ofile, varid = "radar_latitude", vals = radar_lat1)
+    ncvar_put(nc=ofile, varid = "radar_longitude", vals = radar_lon1)
 
     print(paste("writing data in", basename(outfPath)))
     pb = txtProgressBar(min =1, max = length(flist), initial = 1, style = 3) #progress bar
@@ -154,8 +163,8 @@ while(length(flist_all)>0) {
         }
         nc_close(infile)
     }
+    cat("\n")
 
-    print("")
     #close files
     nc_close(ofile)
 
