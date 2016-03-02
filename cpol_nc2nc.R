@@ -45,21 +45,15 @@ while(length(flist_all)>0) {
 
     #read x y z dims
     x1<- ncvar_get(nc = infile, varid = "x")
-    nx1 <- ncvar_get(nc= infile, varid = "nx")
 
     y1<- ncvar_get(nc = infile, varid = "y")
-    ny1 <- ncvar_get(nc= infile, varid = "ny")
 
     z1<- ncvar_get(nc = infile, varid = "z")
-    nz1 <- ncvar_get(nc= infile, varid = "nz")
 
     #read time from all teh files
     time_seconds<- 86400 * laply(flist, ncread_time)
 
-    data_date1 <- ncvar_get(nc = infile, varid = "data_date")
-    data_time1 <- ncvar_get(nc = infile, varid = "data_time")
-
-    #also read other domain info
+    #also read radar latlon
     radar_lat1 <- ncvar_get(nc = infile, varid = "radar_latitude")
     radar_lon1 <- ncvar_get(nc = infile, varid = "radar_longitude")
 
@@ -131,6 +125,7 @@ while(length(flist_all)>0) {
     for (f in 1:length(flist)){
         setTxtProgressBar(pb, f)
         infile <- nc_open(flist[f])
+
         #get the data from input netcdf and put all float variables in output file
         for(var in fvar_names){
             data <- ncvar_get(infile, varid = var)
