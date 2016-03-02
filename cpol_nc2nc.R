@@ -1,17 +1,25 @@
+#!---------------------------------------------------------------------------
+# @author Bhupendra Raut (www.baraut.info)
+# @brief This R script reads CPOL netCDF files (Darwin radar) for each scan
+# and writes them back as daily netCDF-4 files with unlimited time axis.
+# The data is compressed.
+#@todo : separate daily file names
+#==========================================================================================
 
 library(ncdf4)
 library(plyr)
 library(stringr)
-#----------------------------------------------------------- FUNCTION DEFINITION
-#reads time from a list  of netcdf files and convert to seconds
+
+#---------------------------------------------------------- FUNCTION DEFINITIONS
+#reads time from a list  of netcdf files
 ncread_time_bulk <- function(filelist){
     time_all <- laply(filelist, ncread_time)
     invisible(time_all)
 }
 
 #reads time from a single netcdf file
-ncread_time <- function(fname){
-    ncfile <- nc_open(fname)
+ncread_time <- function(filename){
+    ncfile <- nc_open(filename)
     time <- ncvar_get(ncfile, varid = "time")
     return(time)
 }
