@@ -3,7 +3,7 @@ library(ncdf4)
 library(plyr)
 
 #get input file names
-indir <- "~/Dropbox/Bhupendra_shared/Scripts/RScripts/darwin_project/cpol/"
+indir <- "/home/bhupendra/data/darwin_radar/test/CPOL/"
 fpat <- "*.nc"
 flist <- Sys.glob(paste(indir, fpat, sep=""))
 print(paste("found", length(flist), "file(s)."))
@@ -32,8 +32,8 @@ z_min1 <- ncvar_get(nc= infile, varid = "z_min")
 nz1 <- ncvar_get(nc= infile, varid = "nz")
 
 #read time and transform to POSIXct time unit "seconds since 1970-01-01"
-time1<- ncvar_get(nc = infile, varid = "time")
-time1 <- as.POSIXct(time1*86400, origin = "1970-01-01", tz="UTC")
+time_seconds<- 86400 * ncvar_get(nc = infile, varid = "time")
+time1 <- as.POSIXct(time_seconds, origin = "1970-01-01", tz="UTC")
 
 data_date1 <- ncvar_get(nc = infile, varid = "data_date")
 data_time1 <- ncvar_get(nc = infile, varid = "data_time")
@@ -48,7 +48,8 @@ radar_lon1 <- ncvar_get(nc = infile, varid = "radar_longitude")
 x_dim <- ncdim_def(name = "x", units = "km", vals = x1, longname = "distance from radar")
 y_dim <- ncdim_def(name = "y", units = "km", vals = y1, longname = "distance from radar")
 z_dim <- ncdim_def(name = "z", units = "km", vals = z1, longname = "altitude")
-
+t_dim <- ncdim_def(name = "time", units = "seconds since 1970-01-01 00:00:00 UTC", calendar = "gregorian",
+                   vals= time_seconds, longname = "Time of the scan", unlim = TRUE)
 
 
 #This is the list of important "float" variables in the file to read and write
@@ -79,13 +80,13 @@ colnames(ivar_df) <- c("name", "longname")
 
 
 #create all float netcdf variables at once using mlply
-out_fvar_list <- mlply(.data = fvar_df, .fun = ncvar_def, units = "", dim = list(x_dim, y_dim, z_dim), prec = "float",
-                      compression = 7, chunksizes = c(length(x1), length(y1), 1), missval=-999.0)
+out_fvar_list <- mlply(.data = fvar_df, .fun = ncvar_def, units = "", dim = list(x_dim, y_dim, z_dim, t_dim), prec = "float",
+                      compression = 7, chunksizes = c(length(x1), length(y1), 1, 1), missval=-999.0)
 
 
 # and also create integer variables the same way
-out_ivar_list <- mlply(.data = ivar_df, .fun = ncvar_def, units = "", dim = list(x_dim, y_dim, z_dim), prec = "integer",
-                      compression = 7, chunksizes = c(length(x1), length(y1), 1), missval=-99)
+out_ivar_list <- mlply(.data = ivar_df, .fun = ncvar_def, units = "", dim = list(x_dim, y_dim, z_dim, t_dim), prec = "integer",
+                      compression = 7, chunksizes = c(length(x1), length(y1), 1, 1), missval=-99)
 
 #------------------------------- WRITING TO THE FILE --------------------------#
 #open output netcdf file
@@ -96,16 +97,16 @@ ofile <- nc_create(filename = outfName, vars =append(out_fvar_list, out_ivar_lis
 for(var in fvar_names){
   data <- ncvar_get(infile, varid = var)
   #data <- replace(data, data==NA, -999.0)
-  ncvar_put(nc = ofile, varid = var, vals = data, start = c(1, 1, 1),
-            count = c(length(x1), length(y1), length(z1)))
+  ncvar_put(nc = ofile, varid = var, vals = data, start = c(1, 1, 1, 1),
+            count = c(length(x1), length(y1), length(z1), 1))
 }
 
 #get the data from input netcdf and put all integer variables in output file
 for(var in ivar_names){
     data <- ncvar_get(infile, varid = var)
     data <- replace(data, data==NA, -99)
-    ncvar_put(nc = ofile, varid = var, vals = data, start = c(1, 1, 1),
-              count = c(length(x1), length(y1), length(z1)))
+    ncvar_put(nc = ofile, varid = var, vals = data, start = c(1, 1, 1, 1),
+              count = c(length(x1), length(y1), length(z1), 1))
 }
 
 #close files
