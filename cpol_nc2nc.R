@@ -27,7 +27,6 @@ dir.create(outdir)
 #get all input file names
 fpat <- "*.nc"
 flist_all <- Sys.glob(paste(indir, fpat, sep=""))
-#flist <- flist[1:2]
 print(paste(length(flist_all), "file(s) in the folder."))
 
 while(length(flist_all)>0) {
@@ -119,7 +118,7 @@ while(length(flist_all)>0) {
 
     #------------------------------- WRITING TO THE FILE --------------------------#
     #open output netcdf file
-    outfName <- str_replace(flist[1], pattern = "_0000.nc", ".nc")
+    outfName <- str_replace(flist[1], pattern = fname_split[length(fname_split)], ".nc")
     outfPath <- paste(outdir, basename(outfName), sep="")
     ofile <- nc_create(filename = outfPath, vars =append(out_var_list, radar_latlon_var))
 
