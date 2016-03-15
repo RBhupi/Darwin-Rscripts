@@ -12,12 +12,25 @@ library(stringr)
 start_t <- proc.time()
 
 #---------------------------------------------------------- FUNCTION DEFINITIONS
-#reads time from a single netcdf file
+#reads time from a single netcdf file. Using with laply.
 ncread_time <- function(filename){
   ncfile <- nc_open(filename)
   time <- ncvar_get(ncfile, varid = "time")
   return(time)
 }
+
+#gives list of files belong to the same day as the first file in list_allFiles
+get_1dayFiles <- function (list_allFiles) {
+  #following code select files for the whole day
+  firstFile <- list_allFiles[1] # this is first file
+  fname_split <- unlist(strsplit(firstFile, "_")) #split the fileName
+  date_str <- fname_split[length(fname_split)-1] #this is the date
+  selectFiles <- str_detect(list_allFiles, date_str)  #find this pattern in fnames
+  flist_select <- list_allFiles[selectFiles] # select these files for processing
+  print(paste(length(flist_select), "file(s) found on the day", date_str))
+  return(flist_select)
+}
+
 
 
 #reads longname for the vector of varnames and returns a dataframe
@@ -46,14 +59,10 @@ flist_all <- Sys.glob(paste(indir, fpat, sep=""))
 print(paste(length(flist_all), "file(s) in the folder."))
 
 while(length(flist_all)>0) {
-  #following code select files for the whole day
-  firstFile <- flist_all[1] # this is first file
-  fname_split <- unlist(strsplit(firstFile, "_")) #split the fileName
-  date_str <- fname_split[length(fname_split)-1] #this is the date
-  selectFiles <- str_detect(flist_all, date_str)  #find this pattern in fnames
-  flist <- flist_all[selectFiles] # select these files for processing
-  flist_all <- flist_all[!selectFiles] #remaining files are stored for next iteration
-  print(paste(length(flist), "file(s) on the day", date_str))
+  
+  flist <- get_1dayFiles(flist_all)
+  #flist_all <- flist_all[!selectFiles] #remaining files are stored for next iteration
+  flist_all <- flist_all[!flist]  #this line is not tested. must be tested before use (I dont have data). I did it after making function for selecting files.
   
   #open a netcdf file for reading dims
   infile <- nc_open(filename = flist[1])
