@@ -95,14 +95,10 @@ wavelet <- function (data, max_scale) {
 
 
 
-
-colors <- c("#FFE4F3","#FFDEF8","#FFD9FE","#FFD4FF","#FFD1FF","#FFCEFF",
-            "#FFCBFF","#FFC9FF","#F3C8FF","#E4C8FF","#D3C8FF","#C0C8FF",
-            "#ABC8FF","#95C9FF","#7CC9FB","#61C9F2","#3EC8E8","#00C7DC",
-            "#00C6D0","#00C4C2","#00C1B3","#00BEA4","#00BA94","#00B583",
-            "#00B171","#29AB5E","#45A649","#58A031","#679904","#749300",
-            "#7E8C00","#878400","#8F7D00","#967500","#9B6D00","#A06500",
-            "#A35D00","#A6540C","#A84A2B","#A9403E")
+colors <- c("#FFE4F3","#FFD9FE","#FFD0FF","#FFCBFF","#F0C8FF","#CEC8FF",
+            "#A5C9FF","#73C9F8","#2BC8E3","#00C5C9","#00BFAB","#00B78A",
+            "#19AD65","#52A239","#709400","#868600","#957700","#9F6600",
+            "#A65408","#A9403E")
 
 
 
@@ -126,8 +122,8 @@ dbz_bringi <- ncvar_get(ncfile, varid = "zh")
 dbz_bringi <- replace(dbz_bringi, dbz_bringi<0, NA)
 
 #select data scan
-level <- 6
-scan <- 1
+level <- 4
+scan <- 55
 data <- dbz_bringi[, , level, scan]
 data[is.na(data)] <- 0
 
@@ -136,21 +132,26 @@ scale_max=5
 wt <- wavelet(data, max_scale = scale_max)
 
 #make pdf device
-pdf("dBZ_WT.pdf", width=6, height=9)
+pdf(paste("dBZ_WT_added_wt4-cleaned", scan, ".pdf", sep=""), width=6, height=9)
 par(mfrow=c(3, 2))
 subtitle <- paste(z[level], "Km", "; ", strftime(time_posix[scan], tz = "UTC", usetz = TRUE), sep="")
 
 #plot Reflectivity in First panel
-image2D(z = data, x = x, y = y, col=colors,
+image2D(z = data, x = x, y = y, col=colors, breaks = seq(0, 60, by=3),
         xlab="Distance from Radar [Km]", ylab="Distance from Radar [Km]", NAcol = "grey")
 title(main="Bringi Reflectivity [dBZ]")
 text(labels = subtitle, x = min(x), y=(max(y) - 0.1*max(y)), pos = 4)
 
 #and now all WT scales
+wt_cumsum <- array(data=0, dim = dim(data))
 for(scale in 1:scale_max) {
-    image2D(z = wt[scale, , ], x = x, y = y, col=colors,
+    wt_cumsum <- wt_cumsum + wt[scale, , ]
+    wt_cumsum <- replace(wt_cumsum, wt_cumsum < mean(wt_cumsum)+ 2*sd(wt_cumsum), 0)
+
+    image2D(z = wt_cumsum, x = x, y = y, col=colors, breaks = seq(0, 60, by=3),
             xlab="Distance from Radar [Km]", ylab="Distance from Radar [Km]", NAcol = "grey")
-    title(main=paste("WT scale", scale))
+    size<-2^(scale-1)
+    title(main=paste("WT scale=+", scale, "; size=", size,  " Pix/", size*2.5, "Km", sep=""))
 }
 
 dev.off()
