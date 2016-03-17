@@ -3,7 +3,9 @@
 # @brief This R script reads CPOL netCDF files (Darwin radar) for each scan
 # and writes them back as daily netCDF-4 files with unlimited time axis.
 # The data is compressed.
-#@todo : should give example of expected nc file name for futur reference.
+# Warning: file names are expected to follow the pattern some_prefix_string_DATE_TIME.nc
+#
+#@todo :
 #==========================================================================================
 
 library(ncdf4)
@@ -19,14 +21,15 @@ ncread_time <- function(filename){
   return(time)
 }
 
-#gives list of files belong to the same day as the first file in list_allFiles
+#@brief gives list of files belong to the same day as the first file in list_allFiles.
+#Method: split the first file's name by "_" and extract 'dates' string,
+#then search for the same 'dates' in the list and return them back.
 get_1dayFiles <- function (list_allFiles) {
-  #following code select files for the whole day
-  firstFile <- list_allFiles[1] # this is first file
-  fname_split <- unlist(strsplit(firstFile, "_")) #split the fileName
-  date_str <- fname_split[length(fname_split)-1] #this is the date
-  selectFiles <- str_detect(list_allFiles, date_str)  #find this pattern in fnames
-  flist_select <- list_allFiles[selectFiles] # select these files for processing
+  firstFile <- list_allFiles[1]
+  fname_split <- unlist(strsplit(firstFile, "_"))
+  date_str <- fname_split[length(fname_split)-1]
+  selectFiles <- str_detect(list_allFiles, date_str)
+  flist_select <- list_allFiles[selectFiles]
   print(paste(length(flist_select), "file(s) found on the day", date_str))
   return(flist_select)
 }
@@ -35,7 +38,6 @@ get_1dayFiles <- function (list_allFiles) {
 
 #reads longname for the vector of varnames and returns a dataframe
 get_var_longnames <- function (infile, var_names) {
-  #read their long names
   var_longNames <- c(NULL)
   for(var in var_names){
     att<- unlist(ncatt_get(infile, varid=var, attname = "long_name"))
@@ -46,6 +48,14 @@ get_var_longnames <- function (infile, var_names) {
   varnames_df<-cbind(var_names, var_longNames)
   colnames(varnames_df) <- c("name", "longname")
   return(varnames_df)
+}
+
+mk_outFilePath <- function (fname, outputDir) {
+    fname_split <- unlist(strsplit(fname, "_"))
+    pat_replace <- paste("_",fname_split[length(fname_split)], sep="")
+    outfName <- str_replace(fname, pattern = pat_replace, ".nc")
+    outfPath <- paste(outputDir, basename(outfName), sep="")
+    return(outfPath)
 }
 #------------------------------------------------------------------------------#
 indir <- "/home/bhupendra/data/darwin_radar/test/CPOL/"
@@ -114,9 +124,7 @@ while(length(flist_all)>0) {
 
   #------------------------------- WRITING TO THE FILE --------------------------#
   #open output netcdf file
-  fname_split <- unlist(strsplit(flist[1], "_")) #split the fileName
-  outfName <- str_replace(flist[1], pattern = fname_split[length(fname_split)], ".nc")
-  outfPath <- paste(outdir, basename(outfName), sep="")
+  outfPath <- mk_outFilePath(flist[1], outdir)
   ofile <- nc_create(filename = outfPath, vars =append(out_var_list, radar_latlon_var))
 
   #write radar lat-lon to the file
