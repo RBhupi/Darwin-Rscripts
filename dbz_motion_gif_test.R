@@ -71,6 +71,8 @@ colors <- c("white", "#CB7D8D","#67A160")
 image2D(z = steiner_rainClass[, , level, scan], x = x, y = y, xlab="Distance from Radar [Km]", ylab="Distance from Radar [Km]", NAcol = "grey", col = colors)
 title(main="Steiner Classification")
 
+colors<- c("#E16A86","#CD7E37","#A69100","#65A100","#00AB66","#00ACA5",
+                     "#00A2D3","#7D89E6","#C86DD7")
 image2D(z = hydro_class[, , level, scan], x = x, y = y, xlab="Distance from Radar [Km]", ylab="Distance from Radar [Km]", NAcol = "grey", col = colors)
 title(main="Hydrometeor Classification")
 
