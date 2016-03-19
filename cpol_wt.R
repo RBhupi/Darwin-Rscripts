@@ -8,10 +8,11 @@ library(misc3d)
 
 #Function computes WT of the 2d array up to given max_scale.
 #Negative WT are removed. Not tested for non-square data.
-wavelet <- function (data, max_scale) {
+wavelet <- function (data, max_scale){
     dim_data <- dim(data)
-    nlon <- dim_data[1]
-    nlat <- dim_data[2]
+    nlat <- dim_data[1]
+    nlon <- dim_data[2]
+
 
     sf=c(0.0625, 0.25, 0.375) #scaling coef
     wt <- array(dim = c(max_scale, nlon, nlat))
@@ -32,7 +33,7 @@ wavelet <- function (data, max_scale) {
             next1 <- (i+x1)
             next2 <- (i+x2)
 
-            #If these indices are outside the image use next values
+            #If these indices are outside the image, "mirror" them
             if(prev1<1 | prev2 <1){
                 prev1 <- next1
                 prev2 <- next2
@@ -45,11 +46,11 @@ wavelet <- function (data, max_scale) {
 
 
             for (j in 1:(nlat)) {
-                l2  <-  data[j, prev2]
-                l1  <-  data[j, prev1]
-                r1  <-  data[j, next1]
-                r2  <-  data[j, next2]
-                temp1[j, i]  <-  sf[1] * (l2+r2) + sf[2] * (l1 + r1) + sf[3] * data[j, i]
+                left2  <-  data[j, prev2]
+                left1  <-  data[j, prev1]
+                right1  <-  data[j, next1]
+                right2  <-  data[j, next2]
+                temp1[j, i]  <-  sf[1] * (left2+right2) + sf[2] * (left1 + right1) + sf[3] * data[j, i]
             }
         }
 
@@ -68,24 +69,23 @@ wavelet <- function (data, max_scale) {
                 prev2 <- next2
             }
 
-            if(next1 > nlat){
-                next1  <-  (2 * nlat) - next1
+            if(next1 > nlat | next2 > nlat){
+                next1  <-  prev1
+                next2 <- prev2
             }
 
-            if(next2 > nlat){
-                next2  <-  (2 * nlat) - next2
-            }
+
 
             for(j in 1:nlon){
-                t2  <-  temp1[prev2, j]
-                t1  <-  temp1[prev1, j]
-                b1  <-  temp1[next1, j]
-                b2  <-  temp1[next2, j]
-                temp2[i, j]  <-  sf[1] * (t2+b2) + sf[2] * (t1 + b1) + sf[3] * temp1[i, j]
+                top2  <-  temp1[prev2, j]
+                top1  <-  temp1[prev1, j]
+                bottom1  <-  temp1[next1, j]
+                bottom2  <-  temp1[next2, j]
+                temp2[i, j]  <-  sf[1] * (top2+bottom2) + sf[2] * (top1 + bottom1) + sf[3] * temp1[i, j]
             }
         }
 
-        wt[scale, , ] <- data-temp2
+        wt[scale, , ] <- data - temp2
         data <- temp2
 
 
@@ -94,7 +94,7 @@ wavelet <- function (data, max_scale) {
     invisible(wt)
 }
 
-#return cumulative sum of all WT components
+#returns cumulative sum of all WT components
 wt_cumsum<-function(data, max_scale){
     wt <- wavelet(data, max_scale)
     wt_sum <- apply(wt, MARGIN = c(2, 3), FUN = sum)
@@ -102,12 +102,14 @@ wt_cumsum<-function(data, max_scale){
 }
 
 
+#start program
 colors20 <- c("#FFE4F3","#FFD9FE","#FFD0FF","#FFCBFF","#F0C8FF","#CEC8FF",
             "#A5C9FF","#73C9F8","#2BC8E3","#00C5C9","#00BFAB","#00B78A",
             "#19AD65","#52A239","#709400","#868600","#957700","#9F6600",
             "#A65408","#A9403E")
 
 bg_color <- "gray80"
+
 
 setwd("/home/bhupendra/data/darwin_radar/test/CPOL/outNC/")
 inFileName <- "cpol_3d_fields_classes_20050402.nc"
