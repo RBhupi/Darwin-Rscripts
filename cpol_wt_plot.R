@@ -1,6 +1,4 @@
-# Use wavelet transform to extract cumuliform clouds from the radar data.
-
-
+#Use wavelet transform to extract cumuliform clouds from the radar data.
 library(ncdf4)
 library(plot3D)
 library(misc3d)
@@ -90,7 +88,7 @@ wavelet <- function (data, max_scale){
 
 
     }
-    wt<-replace(wt, wt<0, 0)
+    #wt<-replace(wt, wt<0, 0.0)
     invisible(wt)
 }
 
@@ -98,6 +96,7 @@ wavelet <- function (data, max_scale){
 wt_cumsum<-function(data, max_scale){
     wt <- wavelet(data, max_scale)
     wt_sum <- apply(wt, MARGIN = c(2, 3), FUN = sum)
+    wt_sum <- replace(wt_sum, wt_sum<0, 0.0)
     invisible(wt_sum)
 }
 
@@ -133,12 +132,13 @@ dbz_bringi <- replace(dbz_bringi, dbz_bringi<0, NA)
 class_steiner <- ncvar_get(ncfile, varid = "cs")
 class_merhala <- ncvar_get(ncfile, varid="cm")
 class_hydromet <- ncvar_get(ncfile, varid = "hc")
+rain_bringi <- ncvar_get(ncfile, varid = "rr")
 
-scan <- 65
+scan <- 113
 scale_max <- 3
 
 #make pdf device
-pdf(paste("dBZ_WT3_compare_levels", scan, ".pdf", sep=""), width=9, height=6)
+pdf(paste("dBZ_WT3_levels_rr", scan, ".pdf", sep=""), width=9, height=6)
 par(mfrow=c(2, 3))
 
 #select data scan
@@ -153,8 +153,6 @@ wt <- wt_cumsum(data, max_scale = scale_max)
 
 wt_cleaned <- replace(wt, wt < mean(wt)+2*sd(wt), 0)
 
-
-
 subtitle <- paste(z[level], "Km", "; ", strftime(time_posix[scan], tz = "UTC", usetz = TRUE), sep="")
 #plot Reflectivity in First panel
 colors<-colors20
@@ -167,17 +165,17 @@ text(labels = subtitle, x = min(x), y=(max(y) - 0.1*max(y)), pos = 4)
 
 #plot WT3 raw
 colors<-colors20
-image2D(z = wt, x = x, y = y, col=colors, breaks = seq(0, 60, by=3),
+image2D(z = rain_bringi[, , level, scan], x = x, y = y, col=colors, breaks = seq(0, 60, by=3),
         xlab="Distance from Radar [Km]", ylab="Distance from Radar [Km]", NAcol = bg_color)
-size <- 2^(scale_max-1) * 2.5
-title(main=paste("Sum of Raw WT (size", size, "Km)"))
+title(main="Bringi rain rate")
 
 
 #plot WT3 cleaned
 colors<-colors20
 image2D(z = wt_cleaned, x = x, y = y, col=colors, breaks = seq(0, 60, by=3),
         xlab="Distance from Radar [Km]", ylab="Distance from Radar [Km]", NAcol = bg_color)
-title(main="WT with noise reduction", cex=0.6)
+size <- 2^(scale_max-1) * 2.5
+title(main=paste("Sum WT3 (size", size, "Km)"), cex=0.6)
 
 
 
@@ -198,7 +196,5 @@ colors<- c("white", "#E16A86","#D07C42","#B08D00","#7F9C00","#00A742","#00AD84",
 image2D(z = class_hydromet[, , level, scan], x = x, y = y,
         xlab="Distance from Radar [Km]", ylab="Distance from Radar [Km]", NAcol = bg_color, col = colors)
 title(main="Hydrometeor Classification")
-
-
 }
 dev.off()
