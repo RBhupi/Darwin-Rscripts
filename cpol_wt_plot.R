@@ -134,7 +134,7 @@ class_merhala <- ncvar_get(ncfile, varid="cm")
 class_hydromet <- ncvar_get(ncfile, varid = "hc")
 rain_bringi <- ncvar_get(ncfile, varid = "rr")
 
-scan <- 113
+scan <- 49
 scale_max <- 3
 
 #make pdf device
