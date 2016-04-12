@@ -6,7 +6,9 @@
 #Reference :Leese, John A., Charles S. Novak, and Bruce B. Clark. "An automated technique for obtaining cloud motion from geosynchronous satellite data using cross correlation." Journal of applied meteorology 10.1 (1971): 118-132.
 
 #@todo :
+# 0. output in netcdf
 # 1. Not tested for the non-square images.
+# 2. Separation of convective echos is not done
 #==========================================================================================
 
 library(EBImage)
@@ -25,7 +27,7 @@ read_ncFrame <- function(ncfile, var_name, frame_num) {
     invisible(data)
 }
 
-#comput cross-covariance using FFT
+#computs cross-covariance using FFT
 fft_crossCov <- function (img1, img2) {
     fft1_conj <- Conj(fft(img1)) #complex conjugate
     fft2 <- fft(img2)
@@ -37,7 +39,7 @@ fft_crossCov <- function (img1, img2) {
     invisible(crossCov)
 }
 
-## Rearrange the crossCov matrix so that 'zero' frequency or DC component is in the middle of the matrix.
+## Rearranges the crossCov matrix so that 'zero' frequency or DC component is in the middle of the matrix.
 #   This function is adopted from following discussion on stackOverflow
 #   http://stackoverflow.com/questions/30630632/performing-a-phase-correlation-with-fft-in-r
 fft_shift <- function(x) {
@@ -112,33 +114,47 @@ get_imageFlow <- function(frame1, frame2, tileSize){
 }
 
 
+#initial settings
+boxLength <- 11 #in pixels
+ncvar_name <- "rain_rate"
 
-#set directory, Open file
+#set directory  and open the  file
 setwd("~/data/darwin_radar/2d/")
-infile_name <- "./cpol_2D_0405.nc"
-ncfile <- nc_open(infile_name)
+flist <- list.files(pattern = "cpol.*.nc")
+ncfile <- nc_open(flist[1])
 
 #read dimention variables
 x <- ncvar_get(ncfile, varid = "x")
 y <- ncvar_get(ncfile, varid = "y")
 time <- ncvar_get(ncfile, varid = "time")
 
-boxLength <- 11 #in pixels
-
-#read first frame
-img1 <- read_ncFrame(ncfile, var_name = "rain_rate", 1)
-
-
-#read next frame
-img2 <- read_ncFrame(ncfile, var_name = "rain_rate", 2)
-
-heads <- get_imageFlow(img1, img2, boxLength)
-
-image2D(img1, x=x, y=y)
-image2D(img2, x=x, y=y)
+# x y for flow vectors matrix
 x_vec <- x[seq(1, 121, by=12)]
 y_vec <- y[seq(1, 121, by=12)]
 
+#Make output file for flow vectors
+
+
+
+
+
+
+
+
+#read first frame and call it img2, for convinience
+img2 <- read_ncFrame(ncfile, var_name = ncvar_name, 1)
+
+for(scan in 2:5){ #from second frame
+    img1 <- img2
+    #Now read next frame
+    img2 <- read_ncFrame(ncfile, var_name = ncvar_name, scan)
+    heads <- get_imageFlow(img1, img2, boxLength)
+
+    # Write these in output file
+}
+
+image2D(img1, x=x, y=y)
+image2D(img2, x=x, y=y)
 image2D(heads[[1]], x=x_vec, y=y_vec)
 image2D(heads[[2]], x=x_vec, y=y_vec)
 
