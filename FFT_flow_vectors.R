@@ -3,21 +3,24 @@
 # @brief This R script reads netCDF files obtained from Benjamine and
 # estimates flow vectors, using phase correlation with FFT (Leese et al 1971).
 #
-#Reference :Leese, John A., Charles S. Novak, and Bruce B. Clark. "An automated technique for obtaining cloud motion from geosynchronous satellite data using cross correlation." Journal of applied meteorology 10.1 (1971): 118-132.
+#Reference :Leese, John A., Charles S. Novak, and Bruce B. Clark.
+#           "An automated technique for obtaining cloud motion from geosynchronous
+#           satellite data using cross correlation."
+#           Journal of applied meteorology 10.1 (1971): 118-132.
 
 #@todo :
 # 0. output in netcdf
 # 1. Not tested for the non-square images.
 # 2. Separation of convective echos is not done
+# 3. Not tested for variable tile sizes or numbers
 #==========================================================================================
 
-library(EBImage)
 library(ncdf4)
 library(plot3D)
 library(spatstat) #for smoothing
 
 
-## Reads a single frame from netcdf file, replaces NA with 'zeros'
+## Reads a single frame from netcdf file, replaces NAs with 'zeros'
 read_ncFrame <- function(ncfile, var_name, frame_num) {
     start_vec <- c(1, 1, frame_num)
     count_vec <- c(-1, -1, 1)
@@ -79,8 +82,8 @@ fft_flowVectors <- function (im1, im2) {
     return(c(pshift[1], pshift[2]))
 }
 
-## Takes in two frames and compute flow over each tile of the image.
-#  Returns list of x and y headings
+## Takes in two frames and desire tile size to compute flow over tiles of the images.
+#  Returns list of x and y headings for each tile.
 get_imageFlow <- function(frame1, frame2, tileSize){
     frame1_tiles <- untile(frame1, nim = c(tileSize, tileSize), lwd = 0) #untile it in to  boxes
     frame2_tiles <- untile(frame2, nim = c(tileSize, tileSize), lwd = 0)
