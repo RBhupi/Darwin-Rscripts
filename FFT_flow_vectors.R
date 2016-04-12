@@ -3,13 +3,11 @@
 # @brief This R script reads netCDF files obtained from Benjamine and
 # estimates flow vectors, using phase correlation with FFT (Leese et al 1971).
 #
+#Reference :Leese, John A., Charles S. Novak, and Bruce B. Clark. "An automated technique for obtaining cloud motion from geosynchronous satellite data using cross correlation." Journal of applied meteorology 10.1 (1971): 118-132.
+
 #@todo :
+# 1. Not tested for the non-square images.
 #==========================================================================================
-
-
-
-
-
 
 library(EBImage)
 library(ncdf4)
@@ -79,6 +77,41 @@ fft_flowVectors <- function (im1, im2) {
     return(c(pshift[1], pshift[2]))
 }
 
+## Takes in two frames and compute flow over each tile of the image.
+#  Returns list of x and y headings
+get_imageFlow <- function(frame1, frame2, tileSize){
+    frame1_tiles <- untile(frame1, nim = c(tileSize, tileSize), lwd = 0) #untile it in to  boxes
+    frame2_tiles <- untile(frame2, nim = c(tileSize, tileSize), lwd = 0)
+
+    headings <- list()
+
+    num_xytiles <- dim(frame1)/tileSize # num_tiles in x-y direction
+
+    frame_dims <- dim(frame2_tiles)
+
+    for(tile in 1:frame_dims[3]){
+        im1 <- frame1_tiles[, , tile]
+        im2 <- frame2_tiles[, , tile]
+
+        if(max(im1)==0 || max(im2)==0) {
+            headings<-append(headings, list(c(NA, NA)))
+            next
+        }
+        headings <- append(headings, list(fft_flowVectors(im1, im2)))
+    }
+
+    x_headings<-matrix(data = NA, nrow = num_xytiles[1], ncol = num_xytiles[1])
+    y_headings<-matrix(data = NA, nrow = num_xytiles[2], ncol = num_xytiles[2])
+    for (rdim in 1:num_xytiles[1]){
+        for (cdim in 1:num_xytiles[2]) {
+            x_headings[cdim, rdim] = headings[[(rdim-1)*num_xytiles[1] + cdim]][1]
+            y_headings[cdim, rdim] = headings[[(rdim-1)*num_xytiles[2] + cdim]][2]
+        }
+    }
+    invisible(list(x_headings, y_headings))
+}
+
+
 
 #set directory, Open file
 setwd("~/data/darwin_radar/2d/")
@@ -90,49 +123,22 @@ x <- ncvar_get(ncfile, varid = "x")
 y <- ncvar_get(ncfile, varid = "y")
 time <- ncvar_get(ncfile, varid = "time")
 
-boxLength <- 11 #pixels
-nbox_xdim<-11 #number of boxes in x dimention
+boxLength <- 11 #in pixels
 
 #read first frame
 img1 <- read_ncFrame(ncfile, var_name = "rain_rate", 1)
-img1_tiles <- untile(img1, nim = c(boxLength, boxLength), lwd = 0) #untile it in to  boxes
+
 
 #read next frame
 img2 <- read_ncFrame(ncfile, var_name = "rain_rate", 2)
-img2_tiles <- untile(img2, nim = c(boxLength, boxLength), lwd = 0) #untile it in to  boxes
-img_dims <- dim(img2_tiles)
 
-#save headings here
-
-
-
-
-headings <- list()
-for(tile in 1:img_dims[3]){
-im1 <- img1_tiles[, , tile]
-im2 <- img2_tiles[, , tile]
-
-if(max(im1)==0 || max(im2)==0) {
-    headings<-append(headings, list(c(NA, NA)))
-    next
-}
-headings <- append(headings, list(fft_flowVectors(im1, im2)))
-}
-
-x_headings<-matrix(data = NA, nrow = nbox_xdim, ncol = nbox_xdim)
-y_headings<-matrix(data = NA, nrow = nbox_xdim, ncol = nbox_xdim)
-for (rdim in 1:nbox_xdim){
-    for (cdim in 1:nbox_xdim) {
-        x_headings[cdim, rdim] = headings[[(rdim-1)*nbox_xdim + cdim]][1]
-        y_headings[cdim, rdim] = headings[[(rdim-1)*nbox_xdim + cdim]][2]
-
-   }
-}
+heads <- get_imageFlow(img1, img2, boxLength)
 
 image2D(img1, x=x, y=y)
 image2D(img2, x=x, y=y)
 x_vec <- x[seq(1, 121, by=12)]
 y_vec <- y[seq(1, 121, by=12)]
 
-image2D(x_headings, x=x_vec, y=y_vec)
-image2D(y_headings, x=x_vec, y=y_vec)
+image2D(heads[[1]], x=x_vec, y=y_vec)
+image2D(heads[[2]], x=x_vec, y=y_vec)
+
