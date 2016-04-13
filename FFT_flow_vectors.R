@@ -9,7 +9,7 @@
 #           Journal of applied meteorology 10.1 (1971): 118-132.
 
 #@todo :
-# 0. output in netcdf
+# 0. output in netcdf (Done but not tested with large files)
 # 1. Not tested for the non-square images.
 # 2. Separation of convective echos is not done
 # 3. Not tested for variable tile sizes or numbers
@@ -18,6 +18,8 @@
 library(ncdf4)
 library(plot3D)
 library(spatstat) #for smoothing
+library(stringr)
+library(EBImage)
 
 
 ## Reads a single frame from netcdf file, replaces NAs with 'zeros'
@@ -117,47 +119,70 @@ get_imageFlow <- function(frame1, frame2, tileSize){
 }
 
 
+
+## A function to create output netcdf file for flow vectors using input
+#   netcdf dimentions and attributes.
+create_outNC <- function(ncfile) {
+    #read dimention variables
+    x <- ncvar_get(ncfile, varid = "x")
+    y <- ncvar_get(ncfile, varid = "y")
+    time <- ncvar_get(ncfile, varid = "time")
+
+    # x y for flow vectors matrix
+    x_vec <- x[seq(ceiling(boxLength/2), 121, by=11)]
+    y_vec <- y[seq(ceiling(boxLength/2), 121, by=11)]
+
+    #define dimentions for netcdf
+    x_dim <- ncdim_def(name = "x", vals = x_vec, units = ncfile$dim$x$units,
+                       longname = "Distance from Radar in Zonal Direction")
+    y_dim <- ncdim_def(name = "y", vals = y_vec, units = ncfile$dim$y$units,
+                       longname = "Distance from Radar in Meridional Direction")
+    t_dim <- ncdim_def(name = "time", vals = time[-1], units = ncfile$dim$time$units, unlim = TRUE,
+                       longname = "time of the second image used to compute vectors")
+
+    #define variables
+    uVec <- ncvar_def(name="U_Vec", dim = list(x_dim, y_dim, t_dim), units = "pixels per time step",
+                      missval = -999.0, compression = 5, prec = "float", longname = "Flow vector along x-axis")
+    vVec <- ncvar_def(name="V_Vec", dim = list(x_dim, y_dim, t_dim), units = "pixels per time step",
+                      missval = -999.0, compression = 5, prec = "float", longname = "Flow vector along y-axis")
+
+    #create output file
+    outFile <- str_replace(ncfile$filename, pattern = ".nc", replacement = "_fftFlow.nc")
+    if(file.exists(outFile)) file.remove(outFile)
+    outNC <- nc_create(outFile, vars = list(uVec, vVec))
+    invisible(outNC)
+}
+
+
+
 #initial settings
 boxLength <- 11 #in pixels
 ncvar_name <- "rain_rate"
 
 #set directory  and open the  file
 setwd("~/data/darwin_radar/2d/")
-flist <- list.files(pattern = "cpol.*.nc")
-ncfile <- nc_open(flist[1])
+flist <- Sys.glob(paths = "./cpol_2D_????.nc")
 
-#read dimention variables
-x <- ncvar_get(ncfile, varid = "x")
-y <- ncvar_get(ncfile, varid = "y")
-time <- ncvar_get(ncfile, varid = "time")
+inFile <- flist[1]
 
-# x y for flow vectors matrix
-x_vec <- x[seq(1, 121, by=12)]
-y_vec <- y[seq(1, 121, by=12)]
-
-#Make output file for flow vectors
-
-
-
-
-
-
-
+ncfile <- nc_open(inFile)
+outNC <- create_outNC(ncfile)
 
 #read first frame and call it img2, for convinience
 img2 <- read_ncFrame(ncfile, var_name = ncvar_name, 1)
 
-for(scan in 2:5){ #from second frame
+for(scan in 2:ncfile$dim$time$len) { #from second frame
     img1 <- img2
     #Now read next frame
     img2 <- read_ncFrame(ncfile, var_name = ncvar_name, scan)
     heads <- get_imageFlow(img1, img2, boxLength)
 
     # Write these in output file
+    ncvar_put(nc = outNC, varid = outNC$var$U_Vec$name, vals = heads[[1]],
+              start = c(1, 1, scan-1), count=c(dim(heads[[1]]), 1))
 }
 
-image2D(img1, x=x, y=y)
-image2D(img2, x=x, y=y)
-image2D(heads[[1]], x=x_vec, y=y_vec)
-image2D(heads[[2]], x=x_vec, y=y_vec)
+nc_close(ncfile)
+nc_close(outNC)
+
 
