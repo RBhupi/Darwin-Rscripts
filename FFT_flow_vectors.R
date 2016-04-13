@@ -13,13 +13,14 @@
 # 3. Not tested for variable tile sizes or numbers
 #==========================================================================================
 # Start the clock!
-ptm <- proc.time()
+start_time <- proc.time()
 
 library(ncdf4)
 library(plot3D)
 library(spatstat) #for smoothing
 library(stringr)
 library(EBImage)
+library(plyr)
 
 #----------------------------------------------------------function Definitions#
 
@@ -185,56 +186,61 @@ create_outNC <- function(ncfile) {
     invisible(outNC)
 }
 
-#-------------------------------------------------------------------main Program
+## main_program does everything for a single input file.
+main_program <- function(inFile, var_name, tileSize) {
+
+    ncfile <- nc_open(inFile)
+
+    time_seconds <- ncvar_get(ncfile, varid = "time")
+    ntimes <- ncfile$dim$time$len
+
+    outNC <- create_outNC(ncfile)
+
+    print(paste("Computing flow vectors for ", basename(inFile)))
+    pb = txtProgressBar(min =2, max = ntimes, initial = 2, style = 3) #progress bar
+
+    #read first frame and call it img2, for convinience
+    img2 <- get_convection_frame(ncfile, var_name = ncvar_name, 1)
+
+    missing_scans <- 0
+    for(scan in 2:ntimes) { #from second frame
+        setTxtProgressBar(pb, scan)
+
+        img1 <- img2
+        img2 <- get_convection_frame(ncfile, var_name = ncvar_name, scan)
+
+        #missing scan, if scans are more than 12 minutes apart
+        if(time_seconds[scan]-time_seconds[scan-1]>720){
+            heads <- get_missing_headings(img1, tileSize)
+            missing_scans <- missing_scans + 1
+        } else {
+            heads <- get_imageFlow(img1, img2, tileSize)
+        }
+
+        # Write to the output file
+        ncvar_put(nc = outNC, varid = outNC$var$U_Vec$name, vals = heads[[1]],
+                  start = c(1, 1, scan-1), count=c(dim(heads[[1]]), 1))
+        ncvar_put(nc = outNC, varid = outNC$var$V_Vec$name, vals = heads[[2]],
+                  start = c(1, 1, scan-1), count=c(dim(heads[[1]]), 1))
+    }
+    cat("\n") #new line
+    print(paste("missing radar scans in this file = ", missing_scans))
+
+    nc_close(ncfile)
+    nc_close(outNC)
+}
+
+#----------------------------------------------------------------Calling Program
 #initial settings
 boxLength <- 11 #in pixels
 ncvar_name <- "rain_rate"
 
-#set directory  and open the  file
+#set directory  and get file names
 setwd("/home/bhupendra/projects/darwin/data/2d")
 flist <- Sys.glob(paths = "./cpol_2D_????.nc")
 
-inFile <- flist[1]
-ncfile <- nc_open(inFile)
-
-time_seconds <- ncvar_get(ncfile, varid = "time")
-ntimes <- ncfile$dim$time$len
-
-outNC <- create_outNC(ncfile)
-
-print(paste("Computing flow vectors for ", basename(inFile)))
-pb = txtProgressBar(min =2, max = ntimes, initial = 2, style = 3) #progress bar
-
-#read first frame and call it img2, for convinience
-img2 <- get_convection_frame(ncfile, var_name = ncvar_name, 1)
-
-missing_scans <- 0
-for(scan in 2:ntimes) { #from second frame
-    setTxtProgressBar(pb, scan)
-
-    img1 <- img2
-    img2 <- get_convection_frame(ncfile, var_name = ncvar_name, scan)
-
-    #missing scan, if scans are more than 12 minutes apart
-    if(time_seconds[scan]-time_seconds[scan-1]>720){
-        heads <- get_missing_headings(img1, boxLength)
-        missing_scans <- missing_scans + 1
-    } else {
-        heads <- get_imageFlow(img1, img2, boxLength)
-    }
-
-    # Write to the output file
-    ncvar_put(nc = outNC, varid = outNC$var$U_Vec$name, vals = heads[[1]],
-              start = c(1, 1, scan-1), count=c(dim(heads[[1]]), 1))
-    ncvar_put(nc = outNC, varid = outNC$var$V_Vec$name, vals = heads[[2]],
-              start = c(1, 1, scan-1), count=c(dim(heads[[1]]), 1))
-}
-cat("\n") #new line
-print(paste("missing radar scans in this file = ", missing_scans))
-
-nc_close(ncfile)
-nc_close(outNC)
+l_ply(flist, .fun = main_program, ncvar_name, boxLength)
 
 # Stop the clock
-print(proc.time() - ptm)
+print(proc.time() - start_time)
 
