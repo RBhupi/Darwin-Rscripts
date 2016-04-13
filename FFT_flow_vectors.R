@@ -14,6 +14,8 @@
 # 2. Separation of convective echos is not done
 # 3. Not tested for variable tile sizes or numbers
 #==========================================================================================
+# Start the clock!
+ptm <- proc.time()
 
 library(ncdf4)
 library(plot3D)
@@ -21,6 +23,7 @@ library(spatstat) #for smoothing
 library(stringr)
 library(EBImage)
 
+#----------------------------------------------------------function Definitions#
 
 ## Reads a single frame from netcdf file, replaces NAs with 'zeros'
 read_ncFrame <- function(ncfile, var_name, frame_num) {
@@ -134,44 +137,62 @@ create_outNC <- function(ncfile) {
 
     #define dimentions for netcdf
     x_dim <- ncdim_def(name = "x", vals = x_vec, units = ncfile$dim$x$units,
-                       longname = "Distance from Radar in Zonal Direction")
+                       longname = "Distance of the center of tiles from Radar")
     y_dim <- ncdim_def(name = "y", vals = y_vec, units = ncfile$dim$y$units,
-                       longname = "Distance from Radar in Meridional Direction")
+                       longname = "Distance of the center of tiles from Radar")
     t_dim <- ncdim_def(name = "time", vals = time[-1], units = ncfile$dim$time$units, unlim = TRUE,
-                       longname = "time of the second image used to compute vectors")
+                       longname = "time of the second scan used to compute the vectors")
 
     #define variables
     uVec <- ncvar_def(name="U_Vec", dim = list(x_dim, y_dim, t_dim), units = "pixels per time step",
-                      missval = -999.0, compression = 5, prec = "float", longname = "Flow vector along x-axis")
+                      missval = -999.0, compression = 5, prec = "float", longname = "Convection flow vector along x-axis")
     vVec <- ncvar_def(name="V_Vec", dim = list(x_dim, y_dim, t_dim), units = "pixels per time step",
-                      missval = -999.0, compression = 5, prec = "float", longname = "Flow vector along y-axis")
+                      missval = -999.0, compression = 5, prec = "float", longname = "Convection flow vector along y-axis")
 
     #create output file
     outFile <- str_replace(ncfile$filename, pattern = ".nc", replacement = "_fftFlow.nc")
-    if(file.exists(outFile)) file.remove(outFile)
+    if(file.exists(outFile)) {
+        print(paste("replacing existing file.", outFile))
+        file.remove(outFile)
+    }
     outNC <- nc_create(outFile, vars = list(uVec, vVec))
+
+    #add attributes
+    description <- paste("The CPOL radar field of 121 x 121 pixels was devided in to 121 tiles of 11 x 11 pixels.",
+                         "For each tile, the flow vectors were computed using a method described in Leese et. al. (1971).",
+                         "Only convective echos as classified by Steiner et al (1995) were used to comput the flow vectors.")
+
+    ncatt_put(outNC, varid = 0, attname = "_description", attval = description, prec = "text")
+    ncatt_put(outNC, varid = 0, attname = "_email", attval = "Bhupendra.Raut@monash.edu", prec = "text")
+    ncatt_put(outNC, varid = 0, attname = "_date_created", attval = date(), prec = "text")
+
     invisible(outNC)
 }
 
-
-
+#-------------------------------------------------------------------main Program
 #initial settings
 boxLength <- 11 #in pixels
 ncvar_name <- "rain_rate"
 
 #set directory  and open the  file
-setwd("~/data/darwin_radar/2d/")
+setwd("/home/bhupendra/projects/darwin/data/2d")
 flist <- Sys.glob(paths = "./cpol_2D_????.nc")
 
 inFile <- flist[1]
-
 ncfile <- nc_open(inFile)
+ntimes <- ncfile$dim$time$len
+
 outNC <- create_outNC(ncfile)
+
+print(paste("Computing flow vectors for ", basename(inFile)))
+pb = txtProgressBar(min =2, max = ntimes, initial = 2, style = 3) #progress bar
 
 #read first frame and call it img2, for convinience
 img2 <- read_ncFrame(ncfile, var_name = ncvar_name, 1)
 
-for(scan in 2:ncfile$dim$time$len) { #from second frame
+for(scan in 2:ntimes) { #from second frame
+    setTxtProgressBar(pb, scan)
+
     img1 <- img2
     #Now read next frame
     img2 <- read_ncFrame(ncfile, var_name = ncvar_name, scan)
@@ -180,9 +201,14 @@ for(scan in 2:ncfile$dim$time$len) { #from second frame
     # Write these in output file
     ncvar_put(nc = outNC, varid = outNC$var$U_Vec$name, vals = heads[[1]],
               start = c(1, 1, scan-1), count=c(dim(heads[[1]]), 1))
+    ncvar_put(nc = outNC, varid = outNC$var$V_Vec$name, vals = heads[[2]],
+              start = c(1, 1, scan-1), count=c(dim(heads[[1]]), 1))
 }
+cat("\n") #new line
 
 nc_close(ncfile)
 nc_close(outNC)
 
+# Stop the clock
+print(proc.time() - ptm)
 
