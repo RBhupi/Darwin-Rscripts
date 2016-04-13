@@ -35,6 +35,14 @@ read_ncFrame <- function(ncfile, var_name, frame_num) {
     invisible(data)
 }
 
+
+## Returns radar frame with non-convective pixels set to zero.
+get_convection_frame <- function(ncfile, var_name, frame_num){
+    data <- read_ncFrame(ncfile, var_name = var_name, frame_num)
+    steiner <- read_ncFrame(ncfile, var_name = "steiner_class", frame_num)
+    data<-replace(data, steiner != 2, 0.0)
+}
+
 #computs cross-covariance using FFT
 fft_crossCov <- function (img1, img2) {
     fft1_conj <- Conj(fft(img1)) #complex conjugate
@@ -140,7 +148,7 @@ create_outNC <- function(ncfile) {
                        longname = "Distance of the center of tiles from Radar")
     y_dim <- ncdim_def(name = "y", vals = y_vec, units = ncfile$dim$y$units,
                        longname = "Distance of the center of tiles from Radar")
-    t_dim <- ncdim_def(name = "time", vals = time[-1], units = ncfile$dim$time$units, unlim = TRUE,
+    t_dim <- ncdim_def(name = "time", vals = time[2:144], units = ncfile$dim$time$units, unlim = TRUE,
                        longname = "time of the second scan used to compute the vectors")
 
     #define variables
@@ -181,6 +189,7 @@ flist <- Sys.glob(paths = "./cpol_2D_????.nc")
 inFile <- flist[1]
 ncfile <- nc_open(inFile)
 ntimes <- ncfile$dim$time$len
+ntimes=144
 
 outNC <- create_outNC(ncfile)
 
@@ -188,17 +197,17 @@ print(paste("Computing flow vectors for ", basename(inFile)))
 pb = txtProgressBar(min =2, max = ntimes, initial = 2, style = 3) #progress bar
 
 #read first frame and call it img2, for convinience
-img2 <- read_ncFrame(ncfile, var_name = ncvar_name, 1)
+img2 <- get_convection_frame(ncfile, var_name = ncvar_name, 1)
 
 for(scan in 2:ntimes) { #from second frame
     setTxtProgressBar(pb, scan)
 
     img1 <- img2
     #Now read next frame
-    img2 <- read_ncFrame(ncfile, var_name = ncvar_name, scan)
+    img2 <- get_convection_frame(ncfile, var_name = ncvar_name, scan)
     heads <- get_imageFlow(img1, img2, boxLength)
 
-    # Write these in output file
+    # Write to the output file
     ncvar_put(nc = outNC, varid = outNC$var$U_Vec$name, vals = heads[[1]],
               start = c(1, 1, scan-1), count=c(dim(heads[[1]]), 1))
     ncvar_put(nc = outNC, varid = outNC$var$V_Vec$name, vals = heads[[2]],
