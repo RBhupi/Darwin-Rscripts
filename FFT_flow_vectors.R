@@ -9,9 +9,7 @@
 #           Journal of applied meteorology 10.1 (1971): 118-132.
 
 #@todo :
-# 0. output in netcdf (Done but not tested with large files)
 # 1. Not tested for the non-square images.
-# 2. Separation of convective echos is not done
 # 3. Not tested for variable tile sizes or numbers
 #==========================================================================================
 # Start the clock!
@@ -36,7 +34,7 @@ read_ncFrame <- function(ncfile, var_name, frame_num) {
 }
 
 
-## Returns radar frame with non-convective pixels set to zero.
+## Returns radar frame, with non-convective pixels set to zero.
 get_convection_frame <- function(ncfile, var_name, frame_num){
     data <- read_ncFrame(ncfile, var_name = var_name, frame_num)
     steiner <- read_ncFrame(ncfile, var_name = "steiner_class", frame_num)
@@ -118,8 +116,8 @@ get_imageFlow <- function(frame1, frame2, tileSize){
         headings <- append(headings, list(fft_flowVectors(im1, im2)))
     }
 
-    x_headings<-matrix(data = NA, nrow = num_xytiles[1], ncol = num_xytiles[1])
-    y_headings<-matrix(data = NA, nrow = num_xytiles[2], ncol = num_xytiles[2])
+    x_headings<-matrix(data = NA, nrow = num_xytiles[1], ncol = num_xytiles[2])
+    y_headings<-matrix(data = NA, nrow = num_xytiles[1], ncol = num_xytiles[2])
     for (rdim in 1:num_xytiles[1]){
         for (cdim in 1:num_xytiles[2]) {
             x_headings[cdim, rdim] = headings[[(rdim-1)*num_xytiles[1] + cdim]][1]
@@ -130,6 +128,16 @@ get_imageFlow <- function(frame1, frame2, tileSize){
 }
 
 
+## Returns headings arrays as missing values for writing
+get_missing_headings <- function(frame, tileSize){
+    frame_tiles <- untile(frame, nim = c(tileSize, tileSize), lwd = 0) #untile it in to  boxes
+    num_xytiles <- dim(frame)/tileSize # num_tiles in x-y direction
+
+    x_headings<-matrix(data = NA, nrow = num_xytiles[1], ncol = num_xytiles[1])
+    y_headings<-matrix(data = NA, nrow = num_xytiles[2], ncol = num_xytiles[2])
+
+    invisible(list(x_headings, y_headings))
+}
 
 ## A function to create output netcdf file for flow vectors using input
 #   netcdf dimentions and attributes.
@@ -148,7 +156,7 @@ create_outNC <- function(ncfile) {
                        longname = "Distance of the center of tiles from Radar")
     y_dim <- ncdim_def(name = "y", vals = y_vec, units = ncfile$dim$y$units,
                        longname = "Distance of the center of tiles from Radar")
-    t_dim <- ncdim_def(name = "time", vals = time[2:144], units = ncfile$dim$time$units, unlim = TRUE,
+    t_dim <- ncdim_def(name = "time", vals = time[-1], units = ncfile$dim$time$units, unlim = TRUE,
                        longname = "time of the second scan used to compute the vectors")
 
     #define variables
@@ -188,8 +196,9 @@ flist <- Sys.glob(paths = "./cpol_2D_????.nc")
 
 inFile <- flist[1]
 ncfile <- nc_open(inFile)
+
+time_seconds <- ncvar_get(ncfile, varid = "time")
 ntimes <- ncfile$dim$time$len
-ntimes=144
 
 outNC <- create_outNC(ncfile)
 
@@ -199,13 +208,20 @@ pb = txtProgressBar(min =2, max = ntimes, initial = 2, style = 3) #progress bar
 #read first frame and call it img2, for convinience
 img2 <- get_convection_frame(ncfile, var_name = ncvar_name, 1)
 
+missing_scans <- 0
 for(scan in 2:ntimes) { #from second frame
     setTxtProgressBar(pb, scan)
 
     img1 <- img2
-    #Now read next frame
     img2 <- get_convection_frame(ncfile, var_name = ncvar_name, scan)
-    heads <- get_imageFlow(img1, img2, boxLength)
+
+    #missing scan, if scans are more than 12 minutes apart
+    if(time_seconds[scan]-time_seconds[scan-1]>720){
+        heads <- get_missing_headings(img1, boxLength)
+        missing_scans <- missing_scans + 1
+    } else {
+        heads <- get_imageFlow(img1, img2, boxLength)
+    }
 
     # Write to the output file
     ncvar_put(nc = outNC, varid = outNC$var$U_Vec$name, vals = heads[[1]],
@@ -214,6 +230,7 @@ for(scan in 2:ntimes) { #from second frame
               start = c(1, 1, scan-1), count=c(dim(heads[[1]]), 1))
 }
 cat("\n") #new line
+print(paste("missing radar scans in this file = ", missing_scans))
 
 nc_close(ncfile)
 nc_close(outNC)
