@@ -57,26 +57,25 @@ fft_crossCov <- function (img1, img2) {
 ## Rearranges the crossCov matrix so that 'zero' frequency or DC component is in the middle of the matrix.
 #   This function is adopted from following discussion on stackOverflow
 #   http://stackoverflow.com/questions/30630632/performing-a-phase-correlation-with-fft-in-r
-fft_shift <- function(x) {
-    if(class(x)=='matrix') {
-        rd2 <- floor(nrow(x)/2)
-        cd2 <- floor(ncol(x)/2)
+fft_shift <- function(fft_mat) {
+    if(class(fft_mat)=='matrix') {
+        rd2 <- floor(nrow(fft_mat)/2)
+        cd2 <- floor(ncol(fft_mat)/2)
 
         ## Identify the first, second, third, and fourth quadrants
-        q1 <- x[1:rd2,1:cd2]
-        q2 <- x[1:rd2,(cd2+1):ncol(x)]
-        q3 <- x[(rd2+1):nrow(x),(cd2+1):ncol(x)]
-        q4 <- x[(rd2+1):nrow(x),1:cd2]
+        q1 <- fft_mat[1:rd2,1:cd2]
+        q2 <- fft_mat[1:rd2,(cd2+1):ncol(fft_mat)]
+        q3 <- fft_mat[(rd2+1):nrow(fft_mat),(cd2+1):ncol(fft_mat)]
+        q4 <- fft_mat[(rd2+1):nrow(fft_mat),1:cd2]
 
         ## rearrange the quadrants
         centered.t <- rbind(q4,q1)
         centered.b <- rbind(q3,q2)
         centered <- cbind(centered.b,centered.t)
 
-        return(Re(centered))
-    }
-    if(class(x)!='matrix') {
-        print('sorry, this class of input x is not supported yet')
+        invisible(Re(centered))
+    } else {
+        stop("input to fft_shift() should be a matrix")
     }
 }
 
