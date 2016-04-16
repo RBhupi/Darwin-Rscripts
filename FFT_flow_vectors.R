@@ -31,7 +31,6 @@ read_ncFrame <- function(ncfile, var_name, frame_num) {
 
     data <- ncvar_get(ncfile, varid = var_name, start = start_vec, count = count_vec)
     data <- replace(data, is.na(data), 0.0)
-    invisible(data)
 }
 
 
@@ -51,7 +50,6 @@ fft_crossCov <- function (img1, img2) {
 
     crossCov <- fft(C, inv=TRUE)/length(C)
     crossCov <- Re(crossCov)
-    invisible(crossCov)
 }
 
 ## Rearranges the crossCov matrix so that 'zero' frequency or DC component is in the middle of the matrix.
@@ -174,7 +172,7 @@ create_outNC <- function(ncfile) {
     outNC <- nc_create(outFile, vars = list(uVec, vVec))
 
     #add attributes
-    description <- paste("The CPOL radar field of 121 x 121 pixels was devided in to 121 tiles of 11 x 11 pixels.",
+    description <- paste("The CPOL radar field of 121 x 121 pixels was devided in to 121 tiles of 11 x 11 pixels each.",
                          "For each tile, the flow vectors were computed using a method described in Leese et. al. (1971).",
                          "Only convective echos as classified by Steiner et al (1995) were used to comput the flow vectors.")
 
