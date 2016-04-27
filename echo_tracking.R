@@ -4,10 +4,8 @@
 #
 #
 
-
-
 library(ncdf4)
-library(EBImage)
+library(EBImage)  # for bwlabel,
 library(plot3D)
 library(spatstat) #for smoothing
 library(stringr)
@@ -23,14 +21,14 @@ plot_objects_label<-function(labeled_image, xvalues, yvalues){
 
         obj_index <- which(labeled_image==obj_id1, arr.ind = TRUE)
 
-        r1 <- min(obj_index[, 1])
-        r2 <- max(obj_index[, 1])
-        c1 <- min(obj_index[, 2])
-        c2 <- max(obj_index[, 2])
+        r1 <- min(obj_index[, 1], na.rm = TRUE)
+        r2 <- max(obj_index[, 1], na.rm = TRUE)
+        c1 <- min(obj_index[, 2], na.rm = TRUE)
+        c2 <- max(obj_index[, 2], na.rm = TRUE)
+
 
 
         obj_centerIndex <- c((r1+r2)/2, (c1+c2)/2)
-
         text(x=xvalues[obj_centerIndex[1]], y=yvalues[obj_centerIndex[2]], toString(object), cex=0.7)
     }
 }
@@ -57,6 +55,7 @@ get_objAmbientFlow <- function(obj_extent, img1, img2, margin) {
     r2 <- obj_extent$obj_center[1] + obj_extent$obj_radius + margin
     c1 <- obj_extent$obj_center[2] - obj_extent$obj_radius - margin
     c2 <- obj_extent$obj_center[2] + obj_extent$obj_radius + margin
+
     dims <- dim(img1)
     if(r1<=0 || c1 <=0 || r2>dims[1] || c2 > dims[2]){
         return(c(0, 0))
@@ -64,6 +63,8 @@ get_objAmbientFlow <- function(obj_extent, img1, img2, margin) {
 
     flow_region1 <- img1[r1:r2, c1:c2]
     flow_region2 <- img2[r1:r2, c1:c2]
+
+
     return(fft_flowVectors(flow_region1, flow_region2))
 }
 
@@ -79,7 +80,8 @@ fft_crossCov <- function (img1, img2) {
     crossCov <- Re(crossCov)
 }
 
-## Rearranges the crossCov matrix so that 'zero' frequency or DC component is in the middle of the matrix.
+## Rearranges the crossCov matrix so that 'zero' frequency or DC component
+#  is in the middle of the matrix.
 #   This function is adopted from following discussion on stackOverflow
 #   http://stackoverflow.com/questions/30630632/performing-a-phase-correlation-with-fft-in-r
 fft_shift <- function(fft_mat) {
@@ -109,6 +111,11 @@ fft_flowVectors <- function (im1, im2) {
     if(max(im1)==0 || max(im2)==0){
         return(c(0, 0))
     }
+
+
+    im1 <- replace(im1, im1==0, runif(1)) # add noise to image background
+    im2 <- replace(im2, im1==0, runif(1)) # This may help when objects are bigger
+
     crossCov <- fft_crossCov(im1, im2)
     cov_shifted <- fft_shift(crossCov)
     cov_smooth <- blur(as.im(cov_shifted))
@@ -119,6 +126,43 @@ fft_flowVectors <- function (im1, im2) {
     pshift <- pshift-(dims[1]/2)
 
     return(c(pshift[1], pshift[2]))
+}
+
+##
+predict_searchExtent <- function(obj1_extent, shift){
+    shifted_center <- obj1_extent$obj_center + shift
+    search_radius <-5
+
+    x1 <- shifted_center[1] -search_radius
+    x2 <- shifted_center[1] +search_radius
+    y1 <- shifted_center[2] -search_radius
+    y2 <- shifted_center[2] +search_radius
+
+    return(list(x1=x1, x2=x2, y1=y1, y2=y2, center_pred=shifted_center))
+}
+
+
+## Retuns  Euclidean distance between two vectors or matrices
+euclidean_dist <- function(vec1, vec2){
+    sqrt(sum((vec1-vec2)^2))
+}
+
+
+check_searchBox <- function(search_box, sample_img){
+    dims <- dim(sample_img)
+    if(search_box$x1 <= 0){
+        search_box$x1 <- 1
+    }
+    if(search_box$y1 <= 0){
+        search_box$y1 <- 1
+    }
+    if(search_box$x2 > dims[1]){
+        search_box$x2 <- dims[1]
+    }
+    if(search_box$y2 > dims[2]){
+        search_box$y2 <- dims[2]
+    }
+    return(search_box)
 }
 
 
@@ -140,23 +184,39 @@ rm(steiner)
 
 
 
-scan <- 97
-search_margin <- 4 #pixels
+scan <-78
+search_margin <- 6 #pixels
 temp1<-labeled_echo[, , scan]
 temp2<-labeled_echo[, , scan+1]
 
+nObjects1 <- max(temp1) #objects in first image
+nObjects2 <- max(temp2) #objects in first image
+if(nObjects2==0 || nObjects1==0){
+    stop("No echoes to track!!!")
+}
 
+if(nObjects2>nObjects1){
+obj_match <- matrix(1000, nrow = nObjects1, ncol = nObjects2)
+} else {
+    obj_match <- matrix(1000, nrow = nObjects1, ncol = nObjects1)
+}
 
-
-for(obj_id1 in 1:max(temp1)) {
+for(obj_id1 in 1:nObjects1) {
     obj1_extent <- get_objExtent(temp1, obj_id1)
     shift <- get_objAmbientFlow(obj1_extent, temp1, temp2, search_margin)
+    print(paste("fft shift", toString(shift)))
 
     search_box <- predict_searchExtent(obj1_extent, shift)
+    search_box <- check_searchBox(search_box, temp2)
+
     search_area <- temp2[search_box$x1:search_box$x2, search_box$y1:search_box$y2]
+
+
+
 
     obj_found <- unique(as.vector(search_area))
     #print(paste(obj_id1, "==>", toString(obj_found)))
+
 
 
     if(max(obj_found)==0) {
@@ -169,46 +229,34 @@ for(obj_id1 in 1:max(temp1)) {
 
         for(target_obj in obj_found){
             target_extent <- get_objExtent(temp2, target_obj)
-            euc_dist<- euclidean_dist(target_extent$obj_center, search_box$center_pred) #find the distsnce from predicted
+            euc_dist<- euclidean_dist(target_extent$obj_center, search_box$center_pred)
             dist_pred <- append(dist_pred, euc_dist)
 
             euc_dist<- euclidean_dist(target_extent$obj_center, obj1_extent$obj_center)
             dist_actual <- append(dist_actual, euc_dist)
         }
 
-        obj_id2 <- obj_found[which(dist<3) && which(dist_actual<4)]
-    }
 
-    print(paste(obj_id1, "==>", toString(obj_id2)))
+    }
+        obj_match[obj_id1, obj_found] <- dist_actual
+        print(paste(obj_id1, "==>", toString(obj_found)))
+        #print(paste("Deviation From Predicted", toString(dist_pred)))
+        #print(paste("Distance From Actual", toString(dist_actual)))
+}
+
+pairs <- solve_LSAP(obj_match)
+pairs[pairs>nObjects2] <- 0
+
+temp2_updated <- temp2
+for(echo in 1:nObjects1){
+    if(pairs[echo]>0)
+        temp2_updated <- replace(temp2_updated, temp2_updated==pairs[echo], echo)
 }
 
 
 #plot
-pdf("object_label.pdf", width=12, height=8)
+pdf("object_label78.pdf", width=12, height=8)
 par(mfrow=c(1,2))
 plot_objects_label(temp1, x, y)
 plot_objects_label(temp2, x, y)
 dev.off()
-##
-predict_searchExtent <- function(obj1_extent, shift){
-    shifted_center <- obj1_extent$obj_center + shift
-
-    #x1 <- shifted_center[1] - obj1_extent$obj_radius -2
-    #x2 <- shifted_center[1] + obj1_extent$obj_radius +2
-    #y1 <- shifted_center[2] - obj1_extent$obj_radius -2
-    #y2 <- shifted_center[2] + obj1_extent$obj_radius +2
-
-    search_radius <-5
-
-    x1 <- shifted_center[1] -search_radius
-    x2 <- shifted_center[1] +search_radius
-    y1 <- shifted_center[2] -search_radius
-    y2 <- shifted_center[2] +search_radius
-
-    return(list(x1=x1, x2=x2, y1=y1, y2=y2, center_pred=shifted_center))
-}
-
-euclidean_dist <- function(vec1, vec2){
-    sqrt(sum((vec1-vec2)^2))
-}
-
