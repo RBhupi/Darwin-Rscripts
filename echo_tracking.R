@@ -1,8 +1,20 @@
-#@ToDo
-# 1. Check overlapping pixels to identify better match.
-# 2. check the actual area of the echo for both images.
-#
-#
+#!---------------------------------------------------------------------------
+#' @author Bhupendra Raut (www.baraut.info)
+#' @brief This R script reads netCDF files containing echo heights and rain classification
+#' identify objects and estimates flow vectors, using phase correlation with FFT (Leese et al 1971).
+#' Then for each object the search region is predicted for next frame and the objects in that
+#' region (in frame2) are assign to the object in frame 1.
+#' @reference :Leese, John A., Charles S. Novak, and Bruce B. Clark.
+#'           "An automated technique for obtaining cloud motion from geosynchronous
+#'           satellite data using cross correlation."
+#'           Journal of applied meteorology 10.1 (1971): 118-132.
+
+#' @todo
+#' 1. Check overlapping pixels to identify better match.
+#' 2. check the actual area of the echo for both images.
+#==========================================================================================
+# Start the clock!
+start_time <- proc.time()
 
 library(ncdf4)
 library(EBImage)  # for bwlabel,
@@ -10,7 +22,10 @@ library(plot3D)
 library(spatstat) #for smoothing
 library(stringr)
 library(plyr)
+library(clue)  #solve_LSAP()
 
+#----------------------------------------------------------------------fucntions
+## Plots image with objects labels
 plot_objects_label<-function(labeled_image, xvalues, yvalues){
     image2D(replace(labeled_image, labeled_image==0, NA), x=xvalues, y=yvalues)
     grid()
@@ -26,12 +41,11 @@ plot_objects_label<-function(labeled_image, xvalues, yvalues){
         c1 <- min(obj_index[, 2], na.rm = TRUE)
         c2 <- max(obj_index[, 2], na.rm = TRUE)
 
-
-
         obj_centerIndex <- c((r1+r2)/2, (c1+c2)/2)
         text(x=xvalues[obj_centerIndex[1]], y=yvalues[obj_centerIndex[2]], toString(object), cex=0.7)
     }
 }
+
 
 ## Takes in a labeled image and finds the redius and the center of the given object.
 get_objExtent <- function(labeled_image, obj_label) {
@@ -147,7 +161,7 @@ euclidean_dist <- function(vec1, vec2){
     sqrt(sum((vec1-vec2)^2))
 }
 
-
+## search box shoudn't be outside the image or very small.
 check_searchBox <- function(search_box, sample_img){
     dims <- dim(sample_img)
     if(search_box$x1 <= 0){
@@ -162,11 +176,17 @@ check_searchBox <- function(search_box, sample_img){
     if(search_box$y2 > dims[2]){
         search_box$y2 <- dims[2]
     }
-    return(search_box)
+
+    #search box should be large enough
+    if(search_box$x2-search_box$x1 < 5 || search_box$y2-search_box$y1 < 5 ){
+        return(NA)
+    } else {
+        return(search_box)
+    }
 }
 
 
-
+#----------------------------------------------------------------Calling Program
 setwd("~/data/darwin_radar/2d/")
 infile_name <- "./cpol_2D_0506.nc"
 
@@ -185,7 +205,9 @@ rm(steiner)
 
 
 scan <-78
-search_margin <- 6 #pixels
+search_margin <- 5 #pixels
+flow_margin <- 10 #pixels
+
 temp1<-labeled_echo[, , scan]
 temp2<-labeled_echo[, , scan+1]
 
@@ -196,31 +218,32 @@ if(nObjects2==0 || nObjects1==0){
 }
 
 if(nObjects2>nObjects1){
-obj_match <- matrix(1000, nrow = nObjects1, ncol = nObjects2)
+    obj_match <- matrix(1000, nrow = nObjects1, ncol = nObjects2)
 } else {
     obj_match <- matrix(1000, nrow = nObjects1, ncol = nObjects1)
 }
 
 for(obj_id1 in 1:nObjects1) {
     obj1_extent <- get_objExtent(temp1, obj_id1)
-    shift <- get_objAmbientFlow(obj1_extent, temp1, temp2, search_margin)
+    shift <- get_objAmbientFlow(obj1_extent, temp1, temp2, flow_margin)
     print(paste("fft shift", toString(shift)))
 
     search_box <- predict_searchExtent(obj1_extent, shift)
     search_box <- check_searchBox(search_box, temp2)
 
-    search_area <- temp2[search_box$x1:search_box$x2, search_box$y1:search_box$y2]
+    #if search box is NA then object left the image
+    if(is.na(search_box)){
+        obj_found <- NA
+    } else {
+        search_area <- temp2[search_box$x1:search_box$x2, search_box$y1:search_box$y2]
+        obj_found <- unique(as.vector(search_area))
+    }
 
 
-
-
-    obj_found <- unique(as.vector(search_area))
-    #print(paste(obj_id1, "==>", toString(obj_found)))
-
-
-
-    if(max(obj_found)==0) {
+    if(is.na(obj_found) || max(obj_found)==0) {
         obj_id2 <- 0
+        dist_pred <- NA
+        dist_actual <- NA
     } else {
         obj_found <- obj_found[obj_found>0] #remove 0
 
@@ -236,22 +259,22 @@ for(obj_id1 in 1:nObjects1) {
             dist_actual <- append(dist_actual, euc_dist)
         }
 
-
     }
-        obj_match[obj_id1, obj_found] <- dist_actual
-        print(paste(obj_id1, "==>", toString(obj_found)))
-        #print(paste("Deviation From Predicted", toString(dist_pred)))
-        #print(paste("Distance From Actual", toString(dist_actual)))
+    obj_match[obj_id1, obj_found] <- dist_pred
+    print(paste(obj_id1, "==>", toString(obj_found)))
+    #print(paste("Deviation From Predicted", toString(dist_pred)))
+    #print(paste("Distance From Actual", toString(dist_actual)))
 }
 
 pairs <- solve_LSAP(obj_match)
-pairs[pairs>nObjects2] <- 0
 
-temp2_updated <- temp2
-for(echo in 1:nObjects1){
-    if(pairs[echo]>0)
-        temp2_updated <- replace(temp2_updated, temp2_updated==pairs[echo], echo)
+## remove really bad matching
+for(pair in 1:length(pairs)){
+    if(obj_match[pair, pairs[pair]]>10){
+        pairs[pair] <- 0
+    }
 }
+
 
 
 #plot
@@ -260,3 +283,6 @@ par(mfrow=c(1,2))
 plot_objects_label(temp1, x, y)
 plot_objects_label(temp2, x, y)
 dev.off()
+
+# Stop the clock
+print(proc.time() - start_time)
