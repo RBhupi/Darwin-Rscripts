@@ -186,6 +186,12 @@ check_searchBox <- function(search_box, sample_img){
 }
 
 
+## Retuns ratio (>=1) of bigger number to smaller number when given two number.
+get_ratio<-function(x, y){
+    if(x>=y) return(x/y)
+    else if (y>x) return(y/x)
+}
+
 #----------------------------------------------------------------Calling Program
 setwd("~/data/darwin_radar/2d/")
 infile_name <- "./cpol_2D_0506.nc"
@@ -207,6 +213,7 @@ rm(steiner)
 scan <-78
 search_margin <- 5 #pixels
 flow_margin <- 10 #pixels
+large_num <- 100000
 
 temp1<-labeled_echo[, , scan]
 temp2<-labeled_echo[, , scan+1]
@@ -218,9 +225,9 @@ if(nObjects2==0 || nObjects1==0){
 }
 
 if(nObjects2>nObjects1){
-    obj_match <- matrix(1000, nrow = nObjects1, ncol = nObjects2)
+    obj_match <- matrix(large_num, nrow = nObjects1, ncol = nObjects2)
 } else {
-    obj_match <- matrix(1000, nrow = nObjects1, ncol = nObjects1)
+    obj_match <- matrix(large_num, nrow = nObjects1, ncol = nObjects1)
 }
 
 for(obj_id1 in 1:nObjects1) {
@@ -244,6 +251,7 @@ for(obj_id1 in 1:nObjects1) {
         obj_id2 <- 0
         dist_pred <- NA
         dist_actual <- NA
+        discrepancy <- NA
     } else {
         obj_found <- obj_found[obj_found>0] #remove 0
 
@@ -257,10 +265,20 @@ for(obj_id1 in 1:nObjects1) {
 
             euc_dist<- euclidean_dist(target_extent$obj_center, obj1_extent$obj_center)
             dist_actual <- append(dist_actual, euc_dist)
+            size_changed <- get_ratio(target_extent$obj_radius, obj1_extent$obj_radius) #change in size
+
+            discrepancy <- dist_pred + size_changed + dist_actual/2
         }
 
     }
-    obj_match[obj_id1, obj_found] <- dist_pred
+
+
+    if(discrepancy >10 || is.na(discrepancy)){
+        obj_match[obj_id1, obj_found] <- large_num
+    } else {
+        obj_match[obj_id1, obj_found] <- discrepancy
+    }
+
     print(paste(obj_id1, "==>", toString(obj_found)))
     #print(paste("Deviation From Predicted", toString(dist_pred)))
     #print(paste("Distance From Actual", toString(dist_actual)))
