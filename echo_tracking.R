@@ -266,6 +266,15 @@ get_discrepancy_all <- function(obj_found, image2, search_box, obj1_extent) {
     return(discrepancy)
 }
 
+#' Saves discrepancy value to obj_match array for appropriate objects
+save_objMatch <- function(obj_id1, obj_found, discrepancy, obj_match) {
+    if(discrepancy >15 || is.na(discrepancy)){
+        obj_match[obj_id1, obj_found] <- large_num
+    } else {
+        obj_match[obj_id1, obj_found] <- discrepancy
+    }
+    return(obj_match)
+}
 
 #----------------------------------------------------------------Calling Program
 setwd("~/data/darwin_radar/2d/")
@@ -313,24 +322,19 @@ if(nObjects2 > nObjects1){
 }
 
 
+## here we match each object in image1 to all the near-by objects in image2.
 for(obj_id1 in 1:nObjects1) {
 
-    obj1_extent <- get_objExtent(temp1, obj_id1)
+    obj1_extent <- get_objExtent(temp1, obj_id1) #location and radius
     shift <- get_std_flowVector(obj1_extent, temp1, temp2, flow_margin, stdFlow_mag)
     print(paste("fft shift", toString(shift)))
 
     search_box <- predict_searchExtent(obj1_extent, shift)
-    search_box <- check_searchBox(search_box, temp2)
-    obj_found <- find_objects(search_box, temp2)
+    search_box <- check_searchBox(search_box, temp2) #search within the image
+    obj_found <- find_objects(search_box, temp2)  #
     discrepancy <- get_discrepancy_all(obj_found, temp2, search_box, obj1_extent)
+    obj_match <- save_objMatch(obj_id1, obj_found, discrepancy, obj_match)
 
-
-
-    if(discrepancy >15 || is.na(discrepancy)){
-        obj_match[obj_id1, obj_found] <- large_num
-    } else {
-        obj_match[obj_id1, obj_found] <- discrepancy
-    }
     print(paste(obj_id1, "==>", toString(obj_found)))
 }
 
