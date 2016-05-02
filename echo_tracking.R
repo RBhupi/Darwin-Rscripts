@@ -46,6 +46,19 @@ plot_objects_label<-function(labeled_image, xvalues, yvalues){
     }
 }
 
+## Returns labeled image after removing single pixel objects
+clear_onePix_objects <- function(label_image) {
+    size_table <- table(label_image[label_image>0]) # remove zero values
+    onePix_objects <- as.vector(which(size_table==1))
+
+    for(obj in onePix_objects){
+        label_image <- replace(label_image, label_image == obj, 0.0)
+    }
+
+    label_image <- bwlabel(label_image)
+    invisible(label_image)
+}
+
 
 ## Takes in a labeled image and finds the redius and the center of the given object.
 get_objExtent <- function(labeled_image, obj_label) {
@@ -126,7 +139,6 @@ fft_flowVectors <- function (im1, im2) {
         return(c(0, 0))
     }
 
-
     im1 <- replace(im1, im1==0, runif(1)) # add noise to image background
     im2 <- replace(im2, im1==0, runif(1)) # This may help when objects are bigger
 
@@ -141,6 +153,14 @@ fft_flowVectors <- function (im1, im2) {
 
     return(c(pshift[1], pshift[2]))
 }
+
+get_std_flowVector<-function(obj_extent, img1, img2, margin, magnitude){
+    shift <- get_objAmbientFlow(obj_extent, img1, img2, margin)
+    shift <- replace(shift, shift>0, magnitude)
+    shift <- replace(shift, shift<0, magnitude*-1)
+    return(shift)
+}
+
 
 ##
 predict_searchExtent <- function(obj1_extent, shift){
@@ -205,6 +225,8 @@ steiner <- ncvar_get(ncfile, varid = "steiner_class", start = c(1, 1, 1), count 
 dbz_height <-replace(dbz_height, steiner != 2, 0.0)      #set non-convective pixels to zeros
 dbz_height <- replace(dbz_height, is.na(dbz_height), 0.0)     #remove NAs
 labeled_echo <- bwlabel(dbz_height)               #identify and label objects
+
+
 rm(dbz_height)
 rm(steiner)
 
@@ -213,10 +235,15 @@ rm(steiner)
 scan <-78
 search_margin <- 5 #pixels
 flow_margin <- 10 #pixels
+stdFlow_mag <- 2
 large_num <- 100000
 
 temp1<-labeled_echo[, , scan]
 temp2<-labeled_echo[, , scan+1]
+
+temp1 <- clear_onePix_objects(temp1)
+temp2 <- clear_onePix_objects(temp2)
+
 
 nObjects1 <- max(temp1) #objects in first image
 nObjects2 <- max(temp2) #objects in first image
@@ -232,7 +259,9 @@ if(nObjects2>nObjects1){
 
 for(obj_id1 in 1:nObjects1) {
     obj1_extent <- get_objExtent(temp1, obj_id1)
-    shift <- get_objAmbientFlow(obj1_extent, temp1, temp2, flow_margin)
+    shift <- get_std_flowVector(obj1_extent, temp1, temp2, flow_margin, stdFlow_mag)
+
+
     print(paste("fft shift", toString(shift)))
 
     search_box <- predict_searchExtent(obj1_extent, shift)
@@ -273,15 +302,13 @@ for(obj_id1 in 1:nObjects1) {
     }
 
 
-    if(discrepancy >10 || is.na(discrepancy)){
+    if(discrepancy >15 || is.na(discrepancy)){
         obj_match[obj_id1, obj_found] <- large_num
     } else {
         obj_match[obj_id1, obj_found] <- discrepancy
     }
 
     print(paste(obj_id1, "==>", toString(obj_found)))
-    #print(paste("Deviation From Predicted", toString(dist_pred)))
-    #print(paste("Distance From Actual", toString(dist_actual)))
 }
 
 pairs <- solve_LSAP(obj_match)
