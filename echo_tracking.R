@@ -225,11 +225,11 @@ get_ratio<-function(x, y){
 
 
 #computes discrepancy for objects
-get_discrepancy <- function(obj_found, temp2, search_box, obj1_extent) {
+get_discrepancy <- function(obj_found, image2, search_box, obj1_extent) {
     dist_pred <- c(NULL)
     dist_actual <- c(NULL)
     for(target_obj in obj_found){
-        target_extent <- get_objExtent(temp2, target_obj)
+        target_extent <- get_objExtent(image2, target_obj)
         euc_dist<- euclidean_dist(target_extent$obj_center, search_box$center_pred)
         dist_pred <- append(dist_pred, euc_dist)
 
@@ -243,6 +243,28 @@ get_discrepancy <- function(obj_found, temp2, search_box, obj1_extent) {
     return(discrepancy)
 }
 
+
+#' Returns discrepancies of all the objects found within the search box or NA if
+#' no object is present.
+get_discrepancy_all <- function(obj_found, image2, search_box, obj1_extent) {
+    if(is.na(obj_found[1]) || max(obj_found)==0) {
+        obj_id2 <- 0
+        dist_pred <- NA
+        dist_actual <- NA
+        discrepancy <- NA
+    } else {
+        obj_found <- obj_found[obj_found>0] #remove 0
+
+        if(length(obj_found)==1){ # if this is the only object
+            discrepancy <- get_discrepancy(obj_found, image2, search_box, obj1_extent)
+            if(discrepancy < 10) discrepancy <- 0 #lower the discrepancy if not too large
+
+        } else { # when more than one objects
+            discrepancy <- get_discrepancy(obj_found, image2, search_box, obj1_extent)
+        }
+    }
+    return(discrepancy)
+}
 
 
 #----------------------------------------------------------------Calling Program
@@ -300,23 +322,8 @@ for(obj_id1 in 1:nObjects1) {
     search_box <- predict_searchExtent(obj1_extent, shift)
     search_box <- check_searchBox(search_box, temp2)
     obj_found <- find_objects(search_box, temp2)
+    discrepancy <- get_discrepancy_all(obj_found, temp2, search_box, obj1_extent)
 
-    if(is.na(obj_found[1]) || max(obj_found)==0) {
-        obj_id2 <- 0
-        dist_pred <- NA
-        dist_actual <- NA
-        discrepancy <- NA
-    } else {
-        obj_found <- obj_found[obj_found>0] #remove 0
-
-        if(length(obj_found)==1){ # if this is the only object
-            discrepancy <- get_discrepancy(obj_found, temp2, search_box, obj1_extent)
-            if(discrepancy < 10) discrepancy <- 0 #lower the discrepancy if not too large
-
-        } else { # when more than one objects
-            discrepancy <- get_discrepancy(obj_found, temp2, search_box, obj1_extent)
-        }
-    }
 
 
     if(discrepancy >15 || is.na(discrepancy)){
