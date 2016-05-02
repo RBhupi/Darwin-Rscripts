@@ -25,7 +25,7 @@ library(plyr)
 library(clue)  #solve_LSAP()
 
 #----------------------------------------------------------------------fucntions
-## Plots image with objects labels
+#' Plots image with objects labels
 plot_objects_label<-function(labeled_image, xvalues, yvalues){
     image2D(replace(labeled_image, labeled_image==0, NA), x=xvalues, y=yvalues)
     grid()
@@ -46,7 +46,7 @@ plot_objects_label<-function(labeled_image, xvalues, yvalues){
     }
 }
 
-## Returns labeled image after removing single pixel objects
+#' Returns labeled image after removing single pixel objects
 clear_onePix_objects <- function(label_image) {
     size_table <- table(label_image[label_image>0]) # remove zero values
     onePix_objects <- as.vector(which(size_table==1))
@@ -60,7 +60,7 @@ clear_onePix_objects <- function(label_image) {
 }
 
 
-## Takes in a labeled image and finds the redius and the center of the given object.
+#' Takes in a labeled image and finds the redius and the center of the given object.
 get_objExtent <- function(labeled_image, obj_label) {
     #center indices of the object assuming it is a rectangle
     obj_index <- which(labeled_image==obj_label, arr.ind = TRUE)
@@ -74,8 +74,8 @@ get_objExtent <- function(labeled_image, obj_label) {
 }
 
 
-## Takes in object info (radius and center) and two images to estimate ambient flow.
-# margin is the additional region arround the object used to comput the flow vectors.
+#' Takes in object info (radius and center) and two images to estimate ambient flow.
+#' margin is the additional region arround the object used to comput the flow vectors.
 get_objAmbientFlow <- function(obj_extent, img1, img2, margin) {
     #coordinates of the flowregion
     r1 <- obj_extent$obj_center[1] - obj_extent$obj_radius - margin
@@ -95,7 +95,7 @@ get_objAmbientFlow <- function(obj_extent, img1, img2, margin) {
 }
 
 
-#computs cross-covariance using FFT
+#' computs cross-covariance using FFT
 fft_crossCov <- function (img1, img2) {
     fft1_conj <- Conj(fft(img1)) #complex conjugate
     fft2 <- fft(img2)
@@ -106,10 +106,10 @@ fft_crossCov <- function (img1, img2) {
     crossCov <- Re(crossCov)
 }
 
-## Rearranges the crossCov matrix so that 'zero' frequency or DC component
-#  is in the middle of the matrix.
-#   This function is adopted from following discussion on stackOverflow
-#   http://stackoverflow.com/questions/30630632/performing-a-phase-correlation-with-fft-in-r
+#' Rearranges the crossCov matrix so that 'zero' frequency or DC component
+#'  is in the middle of the matrix.
+#'  This function is adopted from following discussion on stackOverflow
+#'  http://stackoverflow.com/questions/30630632/performing-a-phase-correlation-with-fft-in-r
 fft_shift <- function(fft_mat) {
     if(class(fft_mat)=='matrix') {
         rd2 <- floor(nrow(fft_mat)/2)
@@ -132,7 +132,7 @@ fft_shift <- function(fft_mat) {
     }
 }
 
-## Estimates flow vectors in two images
+#' Estimates flow vectors in two images
 fft_flowVectors <- function (im1, im2) {
     if(max(im1)==0 || max(im2)==0){
         return(c(0, 0))
@@ -153,6 +153,7 @@ fft_flowVectors <- function (im1, im2) {
     return(c(pshift[1], pshift[2]))
 }
 
+#' flow vectors magnitude is cut down if more than given value
 get_std_flowVector<-function(obj_extent, img1, img2, margin, magnitude){
     shift <- get_objAmbientFlow(obj_extent, img1, img2, margin)
     shift <- replace(shift, shift > magnitude, magnitude)
@@ -161,7 +162,7 @@ get_std_flowVector<-function(obj_extent, img1, img2, margin, magnitude){
 }
 
 
-##
+#' Predicts search extent for the object in image2 given shift
 predict_searchExtent <- function(obj1_extent, shift){
     shifted_center <- obj1_extent$obj_center + shift
     search_radius <-5
@@ -175,12 +176,12 @@ predict_searchExtent <- function(obj1_extent, shift){
 }
 
 
-## Retuns  Euclidean distance between two vectors or matrices
+#' Retuns  Euclidean distance between two vectors or matrices
 euclidean_dist <- function(vec1, vec2){
     sqrt(sum((vec1-vec2)^2))
 }
 
-## search box shoudn't be outside the image or very small.
+#' search box shoudn't be outside the image or very small.
 check_searchBox <- function(search_box, sample_img){
     dims <- dim(sample_img)
     if(search_box$x1 <= 0){
@@ -204,7 +205,7 @@ check_searchBox <- function(search_box, sample_img){
     }
 }
 
-## Given the search box and image2, finds objects in the region
+#' Given the search box and image2, finds objects in the region
 find_objects <- function(search_box, image2) {
     #if search box is NA then object left the image
     if(is.na(search_box[1])){
@@ -217,14 +218,14 @@ find_objects <- function(search_box, image2) {
 }
 
 
-## Retuns ratio (>=1) of bigger number to smaller number when given two number.
+#' Retuns ratio (>=1) of bigger number to smaller number when given two number.
 get_ratio<-function(x, y){
     if(x>=y) return(x/y)
     else if (y>x) return(y/x)
 }
 
 
-#computes discrepancy for objects
+#' computes discrepancy for a single object
 get_discrepancy <- function(obj_found, image2, search_box, obj1_extent) {
     dist_pred <- c(NULL)
     dist_actual <- c(NULL)
@@ -305,12 +306,13 @@ large_num <- 100000
 temp1<-labeled_echo[, , scan]
 temp2<-labeled_echo[, , scan+1]
 
+#remove small objects
 temp1 <- clear_onePix_objects(temp1)
 temp2 <- clear_onePix_objects(temp2)
 
 
 nObjects1 <- max(temp1) #objects in first image
-nObjects2 <- max(temp2) #objects in first image
+nObjects2 <- max(temp2) #objects in second image
 if(nObjects2==0 || nObjects1==0){
     stop("No echoes to track!!!")
 }
@@ -324,7 +326,6 @@ if(nObjects2 > nObjects1){
 
 ## here we match each object in image1 to all the near-by objects in image2.
 for(obj_id1 in 1:nObjects1) {
-
     obj1_extent <- get_objExtent(temp1, obj_id1) #location and radius
     shift <- get_std_flowVector(obj1_extent, temp1, temp2, flow_margin, stdFlow_mag)
     print(paste("fft shift", toString(shift)))
@@ -346,8 +347,6 @@ for(pair in 1:length(pairs)){
         pairs[pair] <- 0
     }
 }
-
-
 
 
 #plot
