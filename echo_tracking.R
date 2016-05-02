@@ -211,6 +211,28 @@ get_ratio<-function(x, y){
     else if (y>x) return(y/x)
 }
 
+
+#computes discrepancy for
+get_discrepancy <- function(obj_found, temp2, search_box, obj1_extent) {
+    dist_pred <- c(NULL)
+    dist_actual <- c(NULL)
+    for(target_obj in obj_found){
+        target_extent <- get_objExtent(temp2, target_obj)
+        euc_dist<- euclidean_dist(target_extent$obj_center, search_box$center_pred)
+        dist_pred <- append(dist_pred, euc_dist)
+
+        euc_dist<- euclidean_dist(target_extent$obj_center, obj1_extent$obj_center)
+        dist_actual <- append(dist_actual, euc_dist)
+        size_changed <- get_ratio(target_extent$obj_radius, obj1_extent$obj_radius) #change in size
+
+        discrepancy <- dist_pred + size_changed + dist_actual/2
+
+    }
+    return(discrepancy)
+}
+
+
+
 #----------------------------------------------------------------Calling Program
 setwd("~/data/darwin_radar/2d/")
 infile_name <- "./cpol_2D_0506.nc"
@@ -256,6 +278,7 @@ if(nObjects2>nObjects1){
     obj_match <- matrix(large_num, nrow = nObjects1, ncol = nObjects1)
 }
 
+
 for(obj_id1 in 1:nObjects1) {
     obj1_extent <- get_objExtent(temp1, obj_id1)
     shift <- get_std_flowVector(obj1_extent, temp1, temp2, flow_margin, stdFlow_mag)
@@ -267,7 +290,7 @@ for(obj_id1 in 1:nObjects1) {
     search_box <- check_searchBox(search_box, temp2)
 
     #if search box is NA then object left the image
-    if(is.na(search_box)){
+    if(is.na(search_box[1])){
         obj_found <- NA
     } else {
         search_area <- temp2[search_box$x1:search_box$x2, search_box$y1:search_box$y2]
@@ -275,7 +298,7 @@ for(obj_id1 in 1:nObjects1) {
     }
 
 
-    if(is.na(obj_found) || max(obj_found)==0) {
+    if(is.na(obj_found[1]) || max(obj_found)==0) {
         obj_id2 <- 0
         dist_pred <- NA
         dist_actual <- NA
@@ -283,24 +306,12 @@ for(obj_id1 in 1:nObjects1) {
     } else {
         obj_found <- obj_found[obj_found>0] #remove 0
 
-        dist_pred <- c(NULL)
-        dist_actual <- c(NULL)
+        if(length(obj_found)==1){ # if this is the only object
+            discrepancy <- get_discrepancy(obj_found, temp2, search_box, obj1_extent)
+            if(discrepancy < 5) discrepancy <- 0
 
-        if(length(obj_found)==1){ #if this is the only object
-            discrepancy <- 0.0
-        } else {
-        for(target_obj in obj_found){
-            target_extent <- get_objExtent(temp2, target_obj)
-            euc_dist<- euclidean_dist(target_extent$obj_center, search_box$center_pred)
-            dist_pred <- append(dist_pred, euc_dist)
-
-            euc_dist<- euclidean_dist(target_extent$obj_center, obj1_extent$obj_center)
-            dist_actual <- append(dist_actual, euc_dist)
-            size_changed <- get_ratio(target_extent$obj_radius, obj1_extent$obj_radius) #change in size
-
-            discrepancy <- dist_pred + size_changed + dist_actual/2
-        }
-
+        } else { # when more than one objects
+            discrepancy <- get_discrepancy(obj_found, temp2, search_box, obj1_extent)
         }
     }
 
@@ -318,7 +329,7 @@ pairs <- solve_LSAP(obj_match)
 
 ## remove really bad matching
 for(pair in 1:length(pairs)){
-    if(obj_match[pair, pairs[pair]] > 10){
+    if(obj_match[pair, pairs[pair]] >10){
         pairs[pair] <- 0
     }
 }
