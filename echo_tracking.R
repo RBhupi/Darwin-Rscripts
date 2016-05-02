@@ -11,7 +11,7 @@
 
 #' @todo
 #' 1. Check overlapping pixels to identify better match.
-#' 2. check the actual area of the echo for both images.
+#'
 #==========================================================================================
 # Start the clock!
 start_time <- proc.time()
@@ -212,7 +212,7 @@ get_ratio<-function(x, y){
 }
 
 
-#computes discrepancy for
+#computes discrepancy for objects
 get_discrepancy <- function(obj_found, temp2, search_box, obj1_extent) {
     dist_pred <- c(NULL)
     dist_actual <- c(NULL)
@@ -225,7 +225,7 @@ get_discrepancy <- function(obj_found, temp2, search_box, obj1_extent) {
         dist_actual <- append(dist_actual, euc_dist)
         size_changed <- get_ratio(target_extent$obj_radius, obj1_extent$obj_radius) #change in size
 
-        discrepancy <- dist_pred + size_changed + dist_actual/2
+        discrepancy <- dist_pred + size_changed + dist_actual
 
     }
     return(discrepancy)
@@ -253,10 +253,10 @@ rm(steiner)
 
 
 
-scan <-97
+scan <-96
 search_margin <- 5 #pixels
 flow_margin <- 10 #pixels
-stdFlow_mag <- 4
+stdFlow_mag <- 3
 large_num <- 100000
 
 temp1<-labeled_echo[, , scan]
@@ -272,7 +272,7 @@ if(nObjects2==0 || nObjects1==0){
     stop("No echoes to track!!!")
 }
 
-if(nObjects2>nObjects1){
+if(nObjects2 > nObjects1){
     obj_match <- matrix(large_num, nrow = nObjects1, ncol = nObjects2)
 } else {
     obj_match <- matrix(large_num, nrow = nObjects1, ncol = nObjects1)
@@ -281,9 +281,8 @@ if(nObjects2>nObjects1){
 
 for(obj_id1 in 1:nObjects1) {
     obj1_extent <- get_objExtent(temp1, obj_id1)
+
     shift <- get_std_flowVector(obj1_extent, temp1, temp2, flow_margin, stdFlow_mag)
-
-
     print(paste("fft shift", toString(shift)))
 
     search_box <- predict_searchExtent(obj1_extent, shift)
@@ -308,7 +307,7 @@ for(obj_id1 in 1:nObjects1) {
 
         if(length(obj_found)==1){ # if this is the only object
             discrepancy <- get_discrepancy(obj_found, temp2, search_box, obj1_extent)
-            if(discrepancy < 5) discrepancy <- 0
+            if(discrepancy < 10) discrepancy <- 0 #lower the discrepancy if not too large
 
         } else { # when more than one objects
             discrepancy <- get_discrepancy(obj_found, temp2, search_box, obj1_extent)
@@ -321,15 +320,17 @@ for(obj_id1 in 1:nObjects1) {
     } else {
         obj_match[obj_id1, obj_found] <- discrepancy
     }
-
     print(paste(obj_id1, "==>", toString(obj_found)))
 }
 
+
+
+
 pairs <- solve_LSAP(obj_match)
 
-## remove really bad matching
+## remove bad matching
 for(pair in 1:length(pairs)){
-    if(obj_match[pair, pairs[pair]] >10){
+    if(obj_match[pair, pairs[pair]] >15){
         pairs[pair] <- 0
     }
 }
