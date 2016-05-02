@@ -156,8 +156,8 @@ fft_flowVectors <- function (im1, im2) {
 
 get_std_flowVector<-function(obj_extent, img1, img2, margin, magnitude){
     shift <- get_objAmbientFlow(obj_extent, img1, img2, margin)
-    shift <- replace(shift, shift>0, magnitude)
-    shift <- replace(shift, shift<0, magnitude*-1)
+    shift <- replace(shift, shift > magnitude, magnitude)
+    shift <- replace(shift, shift < magnitude*-1, magnitude*-1)
     return(shift)
 }
 
