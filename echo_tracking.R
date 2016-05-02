@@ -91,7 +91,6 @@ get_objAmbientFlow <- function(obj_extent, img1, img2, margin) {
     flow_region1 <- img1[r1:r2, c1:c2]
     flow_region2 <- img2[r1:r2, c1:c2]
 
-
     return(fft_flowVectors(flow_region1, flow_region2))
 }
 
@@ -232,10 +231,10 @@ rm(steiner)
 
 
 
-scan <-78
+scan <-97
 search_margin <- 5 #pixels
 flow_margin <- 10 #pixels
-stdFlow_mag <- 2
+stdFlow_mag <- 4
 large_num <- 100000
 
 temp1<-labeled_echo[, , scan]
@@ -287,6 +286,9 @@ for(obj_id1 in 1:nObjects1) {
         dist_pred <- c(NULL)
         dist_actual <- c(NULL)
 
+        if(length(obj_found)==1){ #if this is the only object
+            discrepancy <- 0.0
+        } else {
         for(target_obj in obj_found){
             target_extent <- get_objExtent(temp2, target_obj)
             euc_dist<- euclidean_dist(target_extent$obj_center, search_box$center_pred)
@@ -299,6 +301,7 @@ for(obj_id1 in 1:nObjects1) {
             discrepancy <- dist_pred + size_changed + dist_actual/2
         }
 
+        }
     }
 
 
@@ -315,15 +318,16 @@ pairs <- solve_LSAP(obj_match)
 
 ## remove really bad matching
 for(pair in 1:length(pairs)){
-    if(obj_match[pair, pairs[pair]]>10){
+    if(obj_match[pair, pairs[pair]] > 10){
         pairs[pair] <- 0
     }
 }
 
 
 
+
 #plot
-pdf("object_label78.pdf", width=12, height=8)
+pdf(paste("object_label_", scan, ".pdf", sep=""), width=12, height=8)
 par(mfrow=c(1,2))
 plot_objects_label(temp1, x, y)
 plot_objects_label(temp2, x, y)
