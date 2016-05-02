@@ -176,12 +176,12 @@ predict_searchExtent <- function(obj1_extent, shift){
 }
 
 
-#' Retuns  Euclidean distance between two vectors or matrices
+#' Returns  Euclidean distance between two vectors or matrices
 euclidean_dist <- function(vec1, vec2){
     sqrt(sum((vec1-vec2)^2))
 }
 
-#' search box shoudn't be outside the image or very small.
+#' Returns NA if search box  outside the image or very small.
 check_searchBox <- function(search_box, sample_img){
     dims <- dim(sample_img)
     if(search_box$x1 <= 0){
@@ -220,8 +220,10 @@ find_objects <- function(search_box, image2) {
 
 #' Retuns ratio (>=1) of bigger number to smaller number when given two number.
 get_ratio<-function(x, y){
-    if(x>=y) return(x/y)
-    else if (y>x) return(y/x)
+    if(x>=y)
+        return(x/y)
+    else
+        return(y/x)
 }
 
 
