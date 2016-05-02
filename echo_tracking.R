@@ -204,6 +204,18 @@ check_searchBox <- function(search_box, sample_img){
     }
 }
 
+## Given the search box and image2, finds objects in the region
+find_objects <- function(search_box, image2) {
+    #if search box is NA then object left the image
+    if(is.na(search_box[1])){
+        obj_found <- NA
+    } else {
+        search_area <- image2[search_box$x1:search_box$x2, search_box$y1:search_box$y2]
+        obj_found <- unique(as.vector(search_area))
+    }
+    return(obj_found)
+}
+
 
 ## Retuns ratio (>=1) of bigger number to smaller number when given two number.
 get_ratio<-function(x, y){
@@ -280,22 +292,14 @@ if(nObjects2 > nObjects1){
 
 
 for(obj_id1 in 1:nObjects1) {
-    obj1_extent <- get_objExtent(temp1, obj_id1)
 
+    obj1_extent <- get_objExtent(temp1, obj_id1)
     shift <- get_std_flowVector(obj1_extent, temp1, temp2, flow_margin, stdFlow_mag)
     print(paste("fft shift", toString(shift)))
 
     search_box <- predict_searchExtent(obj1_extent, shift)
     search_box <- check_searchBox(search_box, temp2)
-
-    #if search box is NA then object left the image
-    if(is.na(search_box[1])){
-        obj_found <- NA
-    } else {
-        search_area <- temp2[search_box$x1:search_box$x2, search_box$y1:search_box$y2]
-        obj_found <- unique(as.vector(search_area))
-    }
-
+    obj_found <- find_objects(search_box, temp2)
 
     if(is.na(obj_found[1]) || max(obj_found)==0) {
         obj_id2 <- 0
@@ -322,9 +326,6 @@ for(obj_id1 in 1:nObjects1) {
     }
     print(paste(obj_id1, "==>", toString(obj_found)))
 }
-
-
-
 
 pairs <- solve_LSAP(obj_match)
 
