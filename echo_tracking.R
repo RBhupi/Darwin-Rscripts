@@ -22,6 +22,7 @@ library(plot3D)
 library(spatstat) #for smoothing
 library(stringr)
 library(plyr)
+library(dplyr) #for bind_rows
 library(clue)  #solve_LSAP()
 
 #----------------------------------------------------------------------fucntions
@@ -311,7 +312,7 @@ locate_allObjects <- function(image1, image2) {
     invisible(obj_match)
 }
 
-
+#' given two images, it identifies the matching objects and pair them appropriatly.
 get_matchPairs <- function(image1, image2) {
     obj_match <- locate_allObjects(image1, image2)
     pairs <- match_pairs(obj_match) #1-to-1
@@ -340,6 +341,57 @@ survival_stats <- function(pairs, num_obj2) {
     obj_born <- num_obj2 - obj_lived
     return(list(lived=obj_lived, died=obj_died, born=obj_born))
 }
+
+#' creates output netcdf file for radar echo tracjecories.
+create_outNC <- function(ofile) {
+    if(file.exists(ofile)){
+        stop(paste(ofile, "exists."))
+    }
+
+    max_obs<- 100
+    dim_echo <- ncdim_def("conv_echo", vals=1, units = "", unlim = TRUE,
+                          longname = "unique id of convective echo", create_dimvar = TRUE)
+
+    dim_obs <- ncdim_def("obs", vals = seq(max_obs), units="", longname = "observation of a convective echo")
+
+    var_time <- ncvar_def("obs_time", units = "seconds since 1970-01-01 00:00:00 UTC",
+                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
+
+    var_x <- ncvar_def("x", units = "Km", longname = "distance from Radar",
+                       dim = list(dim_obs, dim_echo), missval = -999.0, prec = "float")
+
+    var_y <- ncvar_def("y", units = "Km", longname = "distance from Radar",
+                       dim = list(dim_obs, dim_echo), missval = -999.0, prec = "float")
+
+    var_npix <- ncvar_def("size", units = "pixels", longname = "size of the echo in pixels",
+                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
+
+    var_ncg <- ncvar_def("Cg", units = "pixels", longname = "num of Cu Congestus pixels",
+                         dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
+
+    var_ncb <- ncvar_def("Cb", units = "pixels", longname = "num of Cumulonimbus pixels",
+                         dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
+
+    var_nco <- ncvar_def("Co", units = "pixels", longname = "num of Cu overshooting pixels",
+                         dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
+
+    var_list <- list(var_time, var_x, var_y, var_npix, var_ncg, var_ncb, var_nco)
+
+
+    outNC <- nc_create(filename = ofile, vars = var_list)
+
+    #for CF standards
+    ncatt_put(outNC, varid = "conv_echo", attname = "cf_role", attval = "trajectory_id")
+    ncatt_put(outNC, varid = 0, attname = "featureType", attval = "trajectory")
+
+    description <- paste("The CPOL radar echoes of convective types were separated using Steiner classification scheme and tracked.")
+
+    ncatt_put(outNC, varid = 0, attname = "_description", attval = description, prec = "text")
+    ncatt_put(outNC, varid = 0, attname = "_email", attval = "Bhupendra.Raut@monash.edu", prec = "text")
+    ncatt_put(outNC, varid = 0, attname = "_date_created", attval = date(), prec = "text")
+}
+
+
 
 #----------------------------------------------------------------Calling Program
 setwd("~/data/darwin_radar/2d/")
@@ -376,7 +428,8 @@ pairs <- get_matchPairs(temp1, temp2)
 num_obj2 <- max(temp2)
 obj_survival <- survival_stats(pairs, num_obj2)
 
-
+object <- data.frame(nrow=100, ncol=7)
+object <- colnames(c("time", "npix", "lat", "lon", "Cg", "Cb", "Co"))
 
 
 
