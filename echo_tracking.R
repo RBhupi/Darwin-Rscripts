@@ -11,6 +11,7 @@
 
 #' @todo
 #' 1. Check overlapping pixels to identify better match.
+#' 2.
 #'
 #==========================================================================================
 # Start the clock!
@@ -343,12 +344,12 @@ survival_stats <- function(pairs, num_obj2) {
 }
 
 #' creates output netcdf file for radar echo tracjecories.
-create_outNC <- function(ofile) {
+create_outNC <- function(ofile, max_obs) {
     if(file.exists(ofile)){
         stop(paste(ofile, "exists."))
     }
 
-    max_obs<- 100
+
     dim_echo <- ncdim_def("conv_echo", vals=1, units = "", unlim = TRUE,
                           longname = "unique id of convective echo", create_dimvar = TRUE)
 
@@ -389,9 +390,9 @@ create_outNC <- function(ofile) {
     ncatt_put(outNC, varid = 0, attname = "_description", attval = description, prec = "text")
     ncatt_put(outNC, varid = 0, attname = "_email", attval = "Bhupendra.Raut@monash.edu", prec = "text")
     ncatt_put(outNC, varid = 0, attname = "_date_created", attval = date(), prec = "text")
+
+    invisible(outNC)
 }
-
-
 
 #----------------------------------------------------------------Calling Program
 setwd("~/data/darwin_radar/2d/")
@@ -417,21 +418,31 @@ search_margin <- 5 #pixels
 flow_margin <- 10 #pixels
 stdFlow_mag <- 3
 large_num <- 100000
+max_obs<- 100  #longest track that will be recorded
 
 echo_id <- 1
 
-temp1 <-clear_onePix_objects(labeled_echo[, , scan])
-temp2 <-clear_onePix_objects(labeled_echo[, , scan+1])
+# label objects and remove single pixel echoes.
+frame1 <-clear_onePix_objects(labeled_echo[, , scan])
+frame2 <-clear_onePix_objects(labeled_echo[, , scan+1])
 
-pairs <- get_matchPairs(temp1, temp2)
+pairs <- get_matchPairs(frame1, frame2)
 
-num_obj2 <- max(temp2)
+num_obj2 <- max(frame2)
 obj_survival <- survival_stats(pairs, num_obj2)
 
-object <- data.frame(nrow=100, ncol=7)
-object <- colnames(c("time", "npix", "lat", "lon", "Cg", "Cb", "Co"))
 
 
+assign_uids <- function(first_frame, time){
+    nobj <- max(first_frame)
+    object <- data.frame(nrow=max_obs, ncol=7)
+    object <- colnames(c("time", "npix", "x", "y", "Cg", "Cb", "Co"))
+    current_objects <- list()
+    for(i in seq(nobj)) {
+        current_objects[[i]] <- object
+        }
+
+}
 
 
 
@@ -439,8 +450,8 @@ object <- colnames(c("time", "npix", "lat", "lon", "Cg", "Cb", "Co"))
 #plot
 pdf(paste("object_label_", scan, ".pdf", sep=""), width=12, height=8)
 par(mfrow=c(1,2))
-plot_objects_label(temp1, x, y)
-plot_objects_label(temp2, x, y)
+plot_objects_label(frame1, x, y)
+plot_objects_label(frame2, x, y)
 dev.off()
 
 # Stop the clock
