@@ -279,6 +279,74 @@ save_objMatch <- function(obj_id1, obj_found, discrepancy, obj_match) {
     return(obj_match)
 }
 
+#' return number of objects in the image that are more than one pixel big.
+num_objects <- function(img_labled){
+    img_labled <- clear_onePix_objects(img_labled)
+    return(max(img_labled)) #objects in the image
+}
+
+#' Function matches all the obejects in image 1 to objects in image 2
+locate_allObjects <- function(image1, image2) {
+    #remove small objects
+    image1 <- clear_onePix_objects(image1)
+    image2 <- clear_onePix_objects(image2)
+
+    # I am writing them in global environment. bad!
+    nObjects1 <- max(image1) #objects in first image
+    nObjects2 <- max(image2) #objects in second image
+
+
+    if(nObjects2==0 || nObjects1==0){
+        stop("No echoes to track!!!")
+    }
+
+    if(nObjects2 > nObjects1){
+        obj_match <- matrix(large_num, nrow = nObjects1, ncol = nObjects2)
+    } else {
+        obj_match <- matrix(large_num, nrow = nObjects1, ncol = nObjects1)
+    }
+
+      ## here we match each object in image1 to all the near-by objects in image2.
+      for(obj_id1 in 1:nrow(obj_match)) {
+          obj1_extent <- get_objExtent(image1, obj_id1) #location and radius
+          shift <- get_std_flowVector(obj1_extent, image1, image2, flow_margin, stdFlow_mag)
+          print(paste("fft shift", toString(shift)))
+
+          search_box <- predict_searchExtent(obj1_extent, shift)
+          search_box <- check_searchBox(search_box, image2) #search within the image
+          obj_found <- find_objects(search_box, image2)  #
+          discrepancy <- get_discrepancy_all(obj_found, image2, search_box, obj1_extent)
+          obj_match <- save_objMatch(obj_id1, obj_found, discrepancy, obj_match)
+
+          print(paste(obj_id1, "==>", toString(obj_found)))
+      }
+
+    return(obj_match)
+}
+
+#' function matches objects into pairs, also removes bad pairs.
+match_pairs <- function(obj_match) {
+    pairs <- solve_LSAP(obj_match)
+
+    ## remove bad matching
+    for(pair in 1:length(pairs)){
+        if(obj_match[pair, pairs[pair]] >15){
+            pairs[pair] <- 0
+        }
+    }
+    return(pairs)
+}
+
+
+#' returns a list with number of objects lived, died and born in this step.
+survival_stats <- function(pairs, num_obj2) {
+    pairs_vec <- as.vector(pairs)
+    obj_lived <- length(pairs_vec[pairs_vec>0])
+    obj_died <- length(pairs_vec)-obj_lived
+    obj_born <- num_obj2 - obj_lived
+    return(list(lived=obj_lived, died=obj_died, born=obj_born))
+}
+
 #----------------------------------------------------------------Calling Program
 setwd("~/data/darwin_radar/2d/")
 infile_name <- "./cpol_2D_0506.nc"
@@ -307,48 +375,16 @@ large_num <- 100000
 
 temp1<-labeled_echo[, , scan]
 temp2<-labeled_echo[, , scan+1]
+num_obj1 <- num_objects(temp1)
+num_obj2 <- num_objects(temp2)
 
-#remove small objects
-temp1 <- clear_onePix_objects(temp1)
-temp2 <- clear_onePix_objects(temp2)
-
-
-nObjects1 <- max(temp1) #objects in first image
-nObjects2 <- max(temp2) #objects in second image
-if(nObjects2==0 || nObjects1==0){
-    stop("No echoes to track!!!")
-}
-
-if(nObjects2 > nObjects1){
-    obj_match <- matrix(large_num, nrow = nObjects1, ncol = nObjects2)
-} else {
-    obj_match <- matrix(large_num, nrow = nObjects1, ncol = nObjects1)
-}
+matched_candidates <- locate_allObjects(temp1, temp2)
+pairs <- match_pairs(matched_candidates)
+obj_survival <- survival_stats(pairs, num_obj2)
 
 
-## here we match each object in image1 to all the near-by objects in image2.
-for(obj_id1 in 1:nObjects1) {
-    obj1_extent <- get_objExtent(temp1, obj_id1) #location and radius
-    shift <- get_std_flowVector(obj1_extent, temp1, temp2, flow_margin, stdFlow_mag)
-    print(paste("fft shift", toString(shift)))
 
-    search_box <- predict_searchExtent(obj1_extent, shift)
-    search_box <- check_searchBox(search_box, temp2) #search within the image
-    obj_found <- find_objects(search_box, temp2)  #
-    discrepancy <- get_discrepancy_all(obj_found, temp2, search_box, obj1_extent)
-    obj_match <- save_objMatch(obj_id1, obj_found, discrepancy, obj_match)
 
-    print(paste(obj_id1, "==>", toString(obj_found)))
-}
-
-pairs <- solve_LSAP(obj_match)
-
-## remove bad matching
-for(pair in 1:length(pairs)){
-    if(obj_match[pair, pairs[pair]] >15){
-        pairs[pair] <- 0
-    }
-}
 
 
 #plot
