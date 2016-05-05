@@ -269,7 +269,7 @@ get_discrepancy_all <- function(obj_found, image2, search_box, obj1_extent) {
     return(discrepancy)
 }
 
-#' Saves discrepancy value to obj_match array for appropriate objects
+#' Saves discrepancy values in obj_match to obj_match array for appropriate objects
 save_objMatch <- function(obj_id1, obj_found, discrepancy, obj_match) {
     if(discrepancy >15 || is.na(discrepancy)){
         obj_match[obj_id1, obj_found] <- large_num
@@ -279,19 +279,9 @@ save_objMatch <- function(obj_id1, obj_found, discrepancy, obj_match) {
     return(obj_match)
 }
 
-#' return number of objects in the image that are more than one pixel big.
-num_objects <- function(img_labled){
-    img_labled <- clear_onePix_objects(img_labled)
-    return(max(img_labled)) #objects in the image
-}
 
 #' Function matches all the obejects in image 1 to objects in image 2
 locate_allObjects <- function(image1, image2) {
-    #remove small objects
-    image1 <- clear_onePix_objects(image1)
-    image2 <- clear_onePix_objects(image2)
-
-    # I am writing them in global environment. bad!
     nObjects1 <- max(image1) #objects in first image
     nObjects2 <- max(image2) #objects in second image
 
@@ -300,28 +290,32 @@ locate_allObjects <- function(image1, image2) {
         stop("No echoes to track!!!")
     }
 
-    if(nObjects2 > nObjects1){
-        obj_match <- matrix(large_num, nrow = nObjects1, ncol = nObjects2)
-    } else {
-        obj_match <- matrix(large_num, nrow = nObjects1, ncol = nObjects1)
+    obj_match <- matrix(large_num, nrow = nObjects1, ncol = max(nObjects1, nObjects2))
+
+    ## here we match each object in image1 to all the near-by objects in image2.
+    for(obj_id1 in 1:nObjects1) {
+        obj1_extent <- get_objExtent(image1, obj_id1) #location and radius
+        shift <- get_std_flowVector(obj1_extent, image1, image2, flow_margin, stdFlow_mag)
+        print(paste("fft shift", toString(shift)))
+
+        search_box <- predict_searchExtent(obj1_extent, shift)
+        search_box <- check_searchBox(search_box, image2) #search within the image
+        obj_found <- find_objects(search_box, image2)  # gives possible candidates
+        discrepancy <- get_discrepancy_all(obj_found, image2, search_box, obj1_extent)
+
+        obj_match <- save_objMatch(obj_id1, obj_found, discrepancy, obj_match)
+
+        print(paste(obj_id1, "==>", toString(obj_found)))
     }
 
-      ## here we match each object in image1 to all the near-by objects in image2.
-      for(obj_id1 in 1:nrow(obj_match)) {
-          obj1_extent <- get_objExtent(image1, obj_id1) #location and radius
-          shift <- get_std_flowVector(obj1_extent, image1, image2, flow_margin, stdFlow_mag)
-          print(paste("fft shift", toString(shift)))
+    invisible(obj_match)
+}
 
-          search_box <- predict_searchExtent(obj1_extent, shift)
-          search_box <- check_searchBox(search_box, image2) #search within the image
-          obj_found <- find_objects(search_box, image2)  #
-          discrepancy <- get_discrepancy_all(obj_found, image2, search_box, obj1_extent)
-          obj_match <- save_objMatch(obj_id1, obj_found, discrepancy, obj_match)
 
-          print(paste(obj_id1, "==>", toString(obj_found)))
-      }
-
-    return(obj_match)
+get_matchPairs <- function(image1, image2) {
+    obj_match <- locate_allObjects(image1, image2)
+    pairs <- match_pairs(obj_match) #1-to-1
+    return(pairs)
 }
 
 #' function matches objects into pairs, also removes bad pairs.
@@ -356,15 +350,14 @@ x <- ncvar_get(ncfile, varid = "x")
 y <- ncvar_get(ncfile, varid = "y")
 dbz_height <- ncvar_get(ncfile, varid = "zero_dbz_cont", start = c(1, 1, 1), count = c(-1, -1, 100))
 steiner <- ncvar_get(ncfile, varid = "steiner_class", start = c(1, 1, 1), count = c(-1, -1, 100))
+time <- ncvar_get(ncfile, varid="time")
 
 dbz_height <-replace(dbz_height, steiner != 2, 0.0)      #set non-convective pixels to zeros
 dbz_height <- replace(dbz_height, is.na(dbz_height), 0.0)     #remove NAs
 labeled_echo <- bwlabel(dbz_height)               #identify and label objects
 
-
 rm(dbz_height)
 rm(steiner)
-
 
 
 scan <-96
@@ -373,14 +366,17 @@ flow_margin <- 10 #pixels
 stdFlow_mag <- 3
 large_num <- 100000
 
-temp1<-labeled_echo[, , scan]
-temp2<-labeled_echo[, , scan+1]
-num_obj1 <- num_objects(temp1)
-num_obj2 <- num_objects(temp2)
+echo_id <- 1
 
-matched_candidates <- locate_allObjects(temp1, temp2)
-pairs <- match_pairs(matched_candidates)
+temp1 <-clear_onePix_objects(labeled_echo[, , scan])
+temp2 <-clear_onePix_objects(labeled_echo[, , scan+1])
+
+pairs <- get_matchPairs(temp1, temp2)
+
+num_obj2 <- max(temp2)
 obj_survival <- survival_stats(pairs, num_obj2)
+
+
 
 
 
