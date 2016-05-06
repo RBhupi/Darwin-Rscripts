@@ -61,6 +61,20 @@ clear_onePix_objects <- function(label_image) {
     invisible(label_image)
 }
 
+#' returns vertical classification Cg=1, Cb=2, Co=3
+get_vertical_class <- function(conv_height) {
+
+    #min max heigths for classification
+    min_level <- c(5, 15, 31)
+    max_level <- c(14, 30, 40)
+
+    for(i in 1:length(min_level)){
+        conv_height <- replace(conv_height, conv_height>=min_level[i] & conv_height<= max_level[i], i)
+    }
+    return(conv_height) #classified
+}
+
+
 
 #' Takes in a labeled image and finds the redius and the center of the given object.
 get_objExtent <- function(labeled_image, obj_label) {
@@ -72,7 +86,7 @@ get_objExtent <- function(labeled_image, obj_label) {
 
     obj_radius<- max(c(rlength, clength))/2 #maximum possible object radius
     obj_center <- c(min(obj_index[, 1])+obj_radius, min(obj_index[, 2]) + obj_radius)
-    return(list(obj_center=obj_center, obj_radius=obj_radius))
+    return(list(obj_center=obj_center, obj_radius=obj_radius, obj_size=obj_size))
 }
 
 
@@ -394,6 +408,10 @@ create_outNC <- function(ofile, max_obs) {
     invisible(outNC)
 }
 
+
+
+
+
 #----------------------------------------------------------------Calling Program
 setwd("~/data/darwin_radar/2d/")
 infile_name <- "./cpol_2D_0506.nc"
@@ -408,6 +426,7 @@ time <- ncvar_get(ncfile, varid="time")
 dbz_height <-replace(dbz_height, steiner != 2, 0.0)      #set non-convective pixels to zeros
 dbz_height <- replace(dbz_height, is.na(dbz_height), 0.0)     #remove NAs
 labeled_echo <- bwlabel(dbz_height)               #identify and label objects
+conv_class <- get_vertical_class(dbz_height) #classifictaion
 
 rm(dbz_height)
 rm(steiner)
@@ -432,10 +451,10 @@ num_obj2 <- max(frame2)
 obj_survival <- survival_stats(pairs, num_obj2)
 
 #------- test code
-object <- data.frame(nrow=max_obs, ncol=7)
-object <- colnames(c("time", "npix", "x", "y", "Cg", "Cb", "Co"))
 
 
+
+write_first(outNC, current_objects)
 
 #' returns a list for objects with ids in frame1 and frame2 and uids (same as ids for first frame).
 init_uids <- function(first_frame, pairs){
@@ -444,8 +463,12 @@ init_uids <- function(first_frame, pairs){
     current_objects$id1<-seq(nobj)
     current_objects$uid<-seq(nobj)
     current_objects$id2<-as.vector(pairs) #as they are in frame2
+
+    current_objects$time <- object_prop$ti
     return(current_objects)
 }
+
+
 
 
 
