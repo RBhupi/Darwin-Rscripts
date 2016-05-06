@@ -447,6 +447,13 @@ init_uids <- function(first_frame){
     return(current_objects)
 }
 
+
+#' only updates ids from frame 2 and returns modified list
+update_id2 <- function(current_objects, pairs){
+    current_objects$id2<-as.vector(pairs)
+    return(current_objects)
+}
+
 #------
 
 
