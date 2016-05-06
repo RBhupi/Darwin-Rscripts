@@ -431,24 +431,27 @@ pairs <- get_matchPairs(frame1, frame2)
 num_obj2 <- max(frame2)
 obj_survival <- survival_stats(pairs, num_obj2)
 
+#------- test code
+object <- data.frame(nrow=max_obs, ncol=7)
+object <- colnames(c("time", "npix", "x", "y", "Cg", "Cb", "Co"))
 
 
-assign_uids <- function(first_frame, time){
-    nobj <- max(first_frame)
-    object <- data.frame(nrow=max_obs, ncol=7)
-    object <- colnames(c("time", "npix", "x", "y", "Cg", "Cb", "Co"))
+
+#' returns a list for objects with ids in frame1, NAs for frame2 and uids (same as ids for first frame).
+init_uids <- function(first_frame){
     current_objects <- list()
-    for(i in seq(nobj)) {
-        current_objects[[i]] <- object
-        }
-
+    nobj <- max(first_frame)
+    current_objects$id1<-seq(nobj)
+    current_objects$id2<-rep(NA, nobj)
+    current_objects$uid<-seq(nobj)
+    return(current_objects)
 }
 
-
+#------
 
 
 #plot
-pdf(paste("object_label_", scan, ".pdf", sep=""), width=12, height=8)
+pdf(paste("object_label_", scan, ".png", sep=""), width=12, height=8)
 par(mfrow=c(1,2))
 plot_objects_label(frame1, x, y)
 plot_objects_label(frame2, x, y)
