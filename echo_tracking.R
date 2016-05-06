@@ -437,22 +437,18 @@ object <- colnames(c("time", "npix", "x", "y", "Cg", "Cb", "Co"))
 
 
 
-#' returns a list for objects with ids in frame1, NAs for frame2 and uids (same as ids for first frame).
-init_uids <- function(first_frame){
+#' returns a list for objects with ids in frame1 and frame2 and uids (same as ids for first frame).
+init_uids <- function(first_frame, pairs){
     current_objects <- list()
-    nobj <- max(first_frame)
+    nobj <- max(first_frame) #number of objects in first frame
     current_objects$id1<-seq(nobj)
-    current_objects$id2<-rep(NA, nobj)
     current_objects$uid<-seq(nobj)
+    current_objects$id2<-as.vector(pairs) #as they are in frame2
     return(current_objects)
 }
 
 
-#' only updates ids from frame 2 and returns modified list
-update_id2 <- function(current_objects, pairs){
-    current_objects$id2<-as.vector(pairs)
-    return(current_objects)
-}
+
 
 #------
 
