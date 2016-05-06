@@ -469,7 +469,18 @@ init_uids <- function(first_frame, pairs){
 }
 
 
+get_objectProp <- function(image1, img_time){
+    objprop <- c(NULL)
+    nobj <- max(image1)
+    objprop$time <- rep(img_time, nobj) #same time for all objects
 
+    for(obj in seq(nobj)){
+        obj_index <- which(image1==obj, arr.ind = TRUE)
+        objprop$size <- append(objprop$size, length(obj_index[, 1]))
+        objprop$x <- append(objprop$x, median(obj_index[, 2])) #center column
+        objprop$y <- append(objprop$y, median(obj_index[, 1])) #center row
+    }
+}
 
 
 
