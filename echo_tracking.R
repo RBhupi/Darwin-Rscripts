@@ -427,13 +427,14 @@ write_first<-function(outNC, current_objects, obj_props, time1){
 #' returns a dataframe for objects with ids in frame1 and frame2 and uids (same as ids for first frame).
 init_uids <- function(first_frame, pairs){
     nobj <- max(first_frame) #number of objects in frame1
-    objects_mat <- matrix(data = NA, ncol = 3, nrow = nobj)
+    objects_mat <- matrix(data = NA, ncol = 4, nrow = nobj)
 
     objects_mat[, 1] <- seq(nobj)
     objects_mat[, 2] <- seq(nobj)
     objects_mat[, 3] <- as.vector(pairs) #as they are in frame2
+    objects_mat[, 4] <-rep(1, nobj) #observation number for the echo
     current_objects <- data.frame(objects_mat, row.names = NULL)
-    colnames(current_objects) <- c("id1", "uid", "id2")
+    colnames(current_objects) <- c("id1", "uid", "id2", "obs_num")
     uid_counter <<- nobj
     return(current_objects)
 }
@@ -468,16 +469,20 @@ get_objectProp <- function(image1, class1){
 }
 
 #' removes dead objects, updates living objects and assign new uids to born objects.
+#' Also, updates number of observations for each echo.
 update_current_objects <- function(frame2, current_objects){
     nobj <- max(frame2)
     objects_mat <- matrix(data = NA, ncol = 3, nrow = nobj)
 
     objects_mat[, 1] <- seq(nobj) #id1
+
     for (obj in seq(nobj)){
         if(obj %in% current_objects$id2){
             objects_mat[obj, 2] <- current_objects$uid[current_objects$id2==obj]
+            objects_mat[obj, 4] <- current_objects$obs_num[current_objects$id2==obj]+1
         } else {
             objects_mat[obj, 2] <- next_uid()
+            objects_mat[obj, 4] <- 1 #first observation of the echo
         }
     }
 
