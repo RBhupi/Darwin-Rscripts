@@ -434,10 +434,16 @@ init_uids <- function(first_frame, pairs){
     objects_mat[, 3] <- as.vector(pairs) #as they are in frame2
     current_objects <- data.frame(objects_mat, row.names = NULL)
     colnames(current_objects) <- c("id1", "uid", "id2")
-
+    uid_counter <<- nobj
     return(current_objects)
 }
 
+#' Retuns next unique id and increament the uid counter.
+next_uid<-function(){
+    this_uid <- uid_counter
+    uid_counter <<-uid_counter+1
+    return(this_uid)
+}
 
 #' return object's size, location and classification info
 get_objectProp <- function(image1, class1){
@@ -461,7 +467,26 @@ get_objectProp <- function(image1, class1){
     invisible(objprop)
 }
 
+#' removes dead objects, updates living objects and assign new uids to born objects.
+update_current_objects <- function(frame2, current_objects){
+    nobj <- max(frame2)
+    objects_mat <- matrix(data = NA, ncol = 3, nrow = nobj)
 
+    objects_mat[, 1] <- seq(nobj) #id1
+    for (obj in seq(nobj)){
+        if(obj %in% current_objects$id2){
+            objects_mat[obj, 2] <- current_objects$uid[current_objects$id2==obj]
+        } else {
+            objects_mat[obj, 2] <- next_uid()
+        }
+    }
+
+    objects_mat[, 3] <- as.vector(pairs) #as they are in frame2
+
+    current_objects <- data.frame(objects_mat, row.names = NULL)
+    colnames(current_objects) <- c("id1", "uid", "id2")
+    invisible(current_objects)
+}
 
 
 #----------------------------------------------------------------Calling Program
@@ -490,7 +515,7 @@ flow_margin <- 10 #pixels
 stdFlow_mag <- 3
 large_num <- 100000
 max_obs<- 100  #longest track that will be recorded
-
+uid_counter <- 1
 
 # label objects and remove single pixel echoes.
 frame1 <-clear_onePix_objects(labeled_echo[, , scan])
@@ -503,38 +528,26 @@ pairs <- get_matchPairs(frame1, frame2)
 num_obj2 <- max(frame2)
 obj_survival <- survival_stats(pairs, num_obj2)
 current_objects <- init_uids(frame1, pairs) #initiate ids from 1
-obj_props1 <- get_objectProp(frame1, class1)
+obj_props <- get_objectProp(frame1, class1)
 
 #------- test code
 outNC <- create_outNC(ofile = "~/Desktop/test.nc", max_obs = 100)
 write_first(outNC, current_objects, obj_props1, time[1])
 
-obj_props2 <- get_objectProp(frame2, class2)
-
-write_second <- function(frame2, current_objects){
-    nobj <- max(frame2)
-    objects_mat <- matrix(data = NA, ncol = 3, nrow = nobj)
-
-    objects_mat[, 1] <- seq(nobj)
-    objects_mat[, 2] <- seq(nobj)
-    objects_mat[, 3] <- as.vector(pairs) #as they are in frame2
-
-    current_objects <- data.frame(objects_mat, row.names = NULL)
-    colnames(current_objects) <- c("id1", "uid", "id2")
 
 
-
-}
 
 
 # now we need to take next image and repeat the above steps
 # here will be a loop
 frame1 <- frame2
-class1 <- conv_class[, , scan+1]
+class1 <- class2
 frame2 <- clear_onePix_objects(labeled_echo[, , scan+2])
 pairs <- get_matchPairs(frame1, frame2)
 
+current_objects <- update_current_objects(frame1, current_objects)
 
+obj_props <- get_objectProp(frame1, class1)
 
 
 #------
