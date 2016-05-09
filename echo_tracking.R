@@ -63,7 +63,6 @@ clear_onePix_objects <- function(label_image) {
 
 #' returns vertical classification Cg=1, Cb=2, Co=3
 get_vertical_class <- function(conv_height) {
-
     #min max heigths for classification
     min_level <- c(5, 15, 31)
     max_level <- c(14, 30, 40)
@@ -86,6 +85,7 @@ get_objExtent <- function(labeled_image, obj_label) {
 
     obj_radius<- max(c(rlength, clength))/2 #maximum possible object radius
     obj_center <- c(min(obj_index[, 1])+obj_radius, min(obj_index[, 2]) + obj_radius)
+    obj_size <- length(obj_index[, 1])  #size in pixels
     return(list(obj_center=obj_center, obj_radius=obj_radius, obj_size=obj_size))
 }
 
@@ -254,7 +254,7 @@ get_discrepancy <- function(obj_found, image2, search_box, obj1_extent) {
 
         euc_dist<- euclidean_dist(target_extent$obj_center, obj1_extent$obj_center)
         dist_actual <- append(dist_actual, euc_dist)
-        size_changed <- get_ratio(target_extent$obj_radius, obj1_extent$obj_radius) #change in size
+        size_changed <- get_ratio(target_extent$obj_size, obj1_extent$obj_size) #change in size
 
         discrepancy <- dist_pred + size_changed + dist_actual
 
@@ -444,6 +444,7 @@ echo_id <- 1
 # label objects and remove single pixel echoes.
 frame1 <-clear_onePix_objects(labeled_echo[, , scan])
 frame2 <-clear_onePix_objects(labeled_echo[, , scan+1])
+class1 <- conv_class[, , scan]
 
 pairs <- get_matchPairs(frame1, frame2)
 
@@ -454,32 +455,41 @@ obj_survival <- survival_stats(pairs, num_obj2)
 
 
 
-write_first(outNC, current_objects)
+write_first<-function(outNC, current_objects, obj_props){
+
+}
 
 #' returns a list for objects with ids in frame1 and frame2 and uids (same as ids for first frame).
 init_uids <- function(first_frame, pairs){
     current_objects <- list()
-    nobj <- max(first_frame) #number of objects in first frame
+    nobj <- max(first_frame) #number of objects in frame1
     current_objects$id1<-seq(nobj)
     current_objects$uid<-seq(nobj)
     current_objects$id2<-as.vector(pairs) #as they are in frame2
-
-    current_objects$time <- object_prop$ti
     return(current_objects)
 }
 
 
-get_objectProp <- function(image1, img_time){
+#' return object's size, location and classification info
+get_objectProp <- function(image1, class1){
     objprop <- c(NULL)
     nobj <- max(image1)
-    objprop$time <- rep(img_time, nobj) #same time for all objects
 
     for(obj in seq(nobj)){
         obj_index <- which(image1==obj, arr.ind = TRUE)
+        objprop$id1 <- append (objprop$id1, obj)  #id in frame1
         objprop$size <- append(objprop$size, length(obj_index[, 1]))
         objprop$x <- append(objprop$x, median(obj_index[, 2])) #center column
         objprop$y <- append(objprop$y, median(obj_index[, 1])) #center row
+
+        obj_class <- class1[image1==obj] #classification of convection for the object
+        #store number of pixels with classification Cg, Cb, Co etc.
+        objprop$Cg <- append(objprop$Cg, length(obj_class[obj_class==1]))
+        objprop$Cb <- append(objprop$Cb, length(obj_class[obj_class==2]))
+        objprop$Co <- append(objprop$Co, length(obj_class[obj_class==3]))
     }
+
+    invisible(objprop)
 }
 
 
