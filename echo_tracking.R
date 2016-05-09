@@ -487,24 +487,37 @@ stdFlow_mag <- 3
 large_num <- 100000
 max_obs<- 100  #longest track that will be recorded
 
-echo_id <- 1
 
 # label objects and remove single pixel echoes.
 frame1 <-clear_onePix_objects(labeled_echo[, , scan])
 frame2 <-clear_onePix_objects(labeled_echo[, , scan+1])
 class1 <- conv_class[, , scan]
+class2 <- conv_class[, , scan+1]
 
 pairs <- get_matchPairs(frame1, frame2)
 
 num_obj2 <- max(frame2)
 obj_survival <- survival_stats(pairs, num_obj2)
 current_objects <- init_uids(frame1, pairs) #initiate ids from 1
-obj_props <- get_objectProp(frame1, class1)
+obj_props1 <- get_objectProp(frame1, class1)
 
 #------- test code
-
-
 outNC <- create_outNC(ofile = "~/Desktop/test.nc", max_obs = 100)
+write_first(outNC, current_objects, obj_props1, time[1])
+
+obj_props2 <- get_objectProp(frame2, class2)
+
+write_second <- function(current_objects, obj_props2, time[2]){
+
+}
+
+
+# now we need to take next image and repeat the above steps
+# here will be a loop
+frame1 <- frame2
+class1 <- conv_class[, , scan+1]
+frame2 <- clear_onePix_objects(labeled_echo[, , scan+2])
+pairs <- get_matchPairs(frame1, frame2)
 
 
 
