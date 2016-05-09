@@ -424,13 +424,17 @@ write_first<-function(outNC, current_objects, obj_props, time1){
 
 
 
-#' returns a list for objects with ids in frame1 and frame2 and uids (same as ids for first frame).
+#' returns a dataframe for objects with ids in frame1 and frame2 and uids (same as ids for first frame).
 init_uids <- function(first_frame, pairs){
-    current_objects <- list()
     nobj <- max(first_frame) #number of objects in frame1
-    current_objects$id1<-seq(nobj)
-    current_objects$uid<-seq(nobj)
-    current_objects$id2<-as.vector(pairs) #as they are in frame2
+    objects_mat <- matrix(data = NA, ncol = 3, nrow = nobj)
+
+    objects_mat[, 1] <- seq(nobj)
+    objects_mat[, 2] <- seq(nobj)
+    objects_mat[, 3] <- as.vector(pairs) #as they are in frame2
+    current_objects <- data.frame(objects_mat, row.names = NULL)
+    colnames(current_objects) <- c("id1", "uid", "id2")
+
     return(current_objects)
 }
 
@@ -507,7 +511,18 @@ write_first(outNC, current_objects, obj_props1, time[1])
 
 obj_props2 <- get_objectProp(frame2, class2)
 
-write_second <- function(current_objects, obj_props2, time[2]){
+write_second <- function(frame2, current_objects){
+    nobj <- max(frame2)
+    objects_mat <- matrix(data = NA, ncol = 3, nrow = nobj)
+
+    objects_mat[, 1] <- seq(nobj)
+    objects_mat[, 2] <- seq(nobj)
+    objects_mat[, 3] <- as.vector(pairs) #as they are in frame2
+
+    current_objects <- data.frame(objects_mat, row.names = NULL)
+    colnames(current_objects) <- c("id1", "uid", "id2")
+
+
 
 }
 
