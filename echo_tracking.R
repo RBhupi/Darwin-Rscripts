@@ -532,7 +532,7 @@ obj_props <- get_objectProp(frame1, class1)
 
 #------- test code
 outNC <- create_outNC(ofile = "~/Desktop/test.nc", max_obs = 100)
-write_first(outNC, current_objects, obj_props1, time[1])
+write_first(outNC, current_objects, obj_props, time[1])
 
 
 
@@ -548,6 +548,16 @@ pairs <- get_matchPairs(frame1, frame2)
 current_objects <- update_current_objects(frame1, current_objects)
 
 obj_props <- get_objectProp(frame1, class1)
+
+write_updates(outNC, current_objects, obj_props, curr_time)
+
+#' Writes updated trajectories to outNC file
+write_updates <- function(outNC, current_objects, obj_props, curr_time){
+
+
+
+    #Before we write this function, we need to add a field to current objects. obs_num
+}
 
 
 #------
