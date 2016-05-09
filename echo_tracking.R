@@ -408,6 +408,54 @@ create_outNC <- function(ofile, max_obs) {
     invisible(outNC)
 }
 
+#' Function writes properties and uids for all objects in first frame.
+write_first<-function(outNC, current_objects, obj_props, time1){
+    nobj <- length(current_objects$id1)
+
+    ncvar_put(outNC, varid = "obs_time", rep(time1, nobj), start = c(1, current_objects$uid[1]), count =c(1, nobj))
+    ncvar_put(outNC, varid = "x", obj_props$x, start = c(1, current_objects$uid[1]), count =c(1, nobj))
+    ncvar_put(outNC, varid = "y", obj_props$y, start = c(1, current_objects$uid[1]), count =c(1, nobj))
+    ncvar_put(outNC, varid = "size", obj_props$size, start = c(1, current_objects$uid[1]), count =c(1, nobj))
+    ncvar_put(outNC, varid = "Cg", obj_props$Cg, start = c(1, current_objects$uid[1]), count =c(1, nobj))
+    ncvar_put(outNC, varid = "Cb", obj_props$Cb, start = c(1, current_objects$uid[1]), count =c(1, nobj))
+    ncvar_put(outNC, varid = "Co", obj_props$Co, start = c(1, current_objects$uid[1]), count =c(1, nobj))
+}
+
+
+
+
+#' returns a list for objects with ids in frame1 and frame2 and uids (same as ids for first frame).
+init_uids <- function(first_frame, pairs){
+    current_objects <- list()
+    nobj <- max(first_frame) #number of objects in frame1
+    current_objects$id1<-seq(nobj)
+    current_objects$uid<-seq(nobj)
+    current_objects$id2<-as.vector(pairs) #as they are in frame2
+    return(current_objects)
+}
+
+
+#' return object's size, location and classification info
+get_objectProp <- function(image1, class1){
+    objprop <- c(NULL)
+    nobj <- max(image1)
+
+    for(obj in seq(nobj)){
+        obj_index <- which(image1==obj, arr.ind = TRUE)
+        objprop$id1 <- append (objprop$id1, obj)  #id in frame1
+        objprop$size <- append(objprop$size, length(obj_index[, 1]))
+        objprop$x <- append(objprop$x, median(obj_index[, 2])) #center column
+        objprop$y <- append(objprop$y, median(obj_index[, 1])) #center row
+
+        obj_class <- class1[image1==obj] #classification of convection for the object
+        #store number of pixels with classification Cg, Cb, Co etc.
+        objprop$Cg <- append(objprop$Cg, length(obj_class[obj_class==1]))
+        objprop$Cb <- append(objprop$Cb, length(obj_class[obj_class==2]))
+        objprop$Co <- append(objprop$Co, length(obj_class[obj_class==3]))
+    }
+
+    invisible(objprop)
+}
 
 
 
@@ -450,47 +498,14 @@ pairs <- get_matchPairs(frame1, frame2)
 
 num_obj2 <- max(frame2)
 obj_survival <- survival_stats(pairs, num_obj2)
+current_objects <- init_uids(frame1, pairs) #initiate ids from 1
+obj_props <- get_objectProp(frame1, class1)
 
 #------- test code
 
 
+outNC <- create_outNC(ofile = "~/Desktop/test.nc", max_obs = 100)
 
-write_first<-function(outNC, current_objects, obj_props){
-
-}
-
-#' returns a list for objects with ids in frame1 and frame2 and uids (same as ids for first frame).
-init_uids <- function(first_frame, pairs){
-    current_objects <- list()
-    nobj <- max(first_frame) #number of objects in frame1
-    current_objects$id1<-seq(nobj)
-    current_objects$uid<-seq(nobj)
-    current_objects$id2<-as.vector(pairs) #as they are in frame2
-    return(current_objects)
-}
-
-
-#' return object's size, location and classification info
-get_objectProp <- function(image1, class1){
-    objprop <- c(NULL)
-    nobj <- max(image1)
-
-    for(obj in seq(nobj)){
-        obj_index <- which(image1==obj, arr.ind = TRUE)
-        objprop$id1 <- append (objprop$id1, obj)  #id in frame1
-        objprop$size <- append(objprop$size, length(obj_index[, 1]))
-        objprop$x <- append(objprop$x, median(obj_index[, 2])) #center column
-        objprop$y <- append(objprop$y, median(obj_index[, 1])) #center row
-
-        obj_class <- class1[image1==obj] #classification of convection for the object
-        #store number of pixels with classification Cg, Cb, Co etc.
-        objprop$Cg <- append(objprop$Cg, length(obj_class[obj_class==1]))
-        objprop$Cb <- append(objprop$Cb, length(obj_class[obj_class==2]))
-        objprop$Co <- append(objprop$Co, length(obj_class[obj_class==3]))
-    }
-
-    invisible(objprop)
-}
 
 
 
