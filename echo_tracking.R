@@ -202,19 +202,19 @@ euclidean_dist <- function(vec1, vec2){
 }
 
 #' Returns NA if search box  outside the image or very small.
-check_searchBox <- function(search_box, sample_img){
-    dims <- dim(sample_img)
+check_searchBox <- function(search_box, img_dims){
+
     if(search_box$x1 <= 0){
         search_box$x1 <- 1
     }
     if(search_box$y1 <= 0){
         search_box$y1 <- 1
     }
-    if(search_box$x2 > dims[1]){
-        search_box$x2 <- dims[1]
+    if(search_box$x2 > img_dims[1]){
+        search_box$x2 <- img_dims[1]
     }
-    if(search_box$y2 > dims[2]){
-        search_box$y2 <- dims[2]
+    if(search_box$y2 > img_dims[2]){
+        search_box$y2 <- img_dims[2]
     }
 
     #search box should be large enough
@@ -319,7 +319,7 @@ locate_allObjects <- function(image1, image2) {
         print(paste("fft shift", toString(shift)))
 
         search_box <- predict_searchExtent(obj1_extent, shift, search_margin)
-        search_box <- check_searchBox(search_box, image2) #search within the image
+        search_box <- check_searchBox(search_box, dim(image2)) #search within the image
         obj_found <- find_objects(search_box, image2)  # gives possible candidates
         discrepancy <- get_discrepancy_all(obj_found, image2, search_box, obj1_extent)
 
