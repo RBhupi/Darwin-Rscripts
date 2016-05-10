@@ -113,6 +113,15 @@ get_objAmbientFlow <- function(obj_extent, img1, img2, margin) {
     return(fft_flowVectors(flow_region1, flow_region2))
 }
 
+#' Alternative to get_objAmbientFlow.
+#' Flow vectors magnitude is clipped to given magnitude
+get_std_flowVector<-function(obj_extent, img1, img2, margin, magnitude){
+    shift <- get_objAmbientFlow(obj_extent, img1, img2, margin)
+    shift <- replace(shift, shift > magnitude, magnitude)
+    shift <- replace(shift, shift < magnitude*-1, magnitude*-1)
+    return(shift)
+}
+
 
 #' Estimates flow vectors in two images using cross covariance of the images.
 fft_flowVectors <- function (im1, im2) {
@@ -174,20 +183,9 @@ fft_shift <- function(fft_mat) {
 }
 
 
-
-#' flow vectors magnitude is cut down if more than given value
-get_std_flowVector<-function(obj_extent, img1, img2, margin, magnitude){
-    shift <- get_objAmbientFlow(obj_extent, img1, img2, margin)
-    shift <- replace(shift, shift > magnitude, magnitude)
-    shift <- replace(shift, shift < magnitude*-1, magnitude*-1)
-    return(shift)
-}
-
-
 #' Predicts search extent for the object in image2 given shift
-predict_searchExtent <- function(obj1_extent, shift){
+predict_searchExtent <- function(obj1_extent, shift, search_radius){
     shifted_center <- obj1_extent$obj_center + shift
-    search_radius <-5
 
     x1 <- shifted_center[1] -search_radius
     x2 <- shifted_center[1] +search_radius
@@ -320,7 +318,7 @@ locate_allObjects <- function(image1, image2) {
         shift <- get_std_flowVector(obj1_extent, image1, image2, flow_margin, stdFlow_mag)
         print(paste("fft shift", toString(shift)))
 
-        search_box <- predict_searchExtent(obj1_extent, shift)
+        search_box <- predict_searchExtent(obj1_extent, shift, search_margin)
         search_box <- check_searchBox(search_box, image2) #search within the image
         obj_found <- find_objects(search_box, image2)  # gives possible candidates
         discrepancy <- get_discrepancy_all(obj_found, image2, search_box, obj1_extent)
@@ -545,7 +543,7 @@ stdFlow_mag <- 3 #flow will not be faster than this
 large_num <- 100000  #a very large number
 max_obs<- 100  #longest track that is likely to be recorded
 uid_counter <- 1 #starting unique id
-min_size <- 2
+min_size <- 2  #smaller objects will be filter
 
 # label objects and remove single pixel echoes.
 frame1 <-clear_smallEchoes(labeled_echo[, , scan], min_size)
