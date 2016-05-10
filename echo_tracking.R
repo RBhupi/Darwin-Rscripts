@@ -1,6 +1,7 @@
 #!---------------------------------------------------------------------------
+#' @title Tracking Convective Echoes in CPOL Radar Data.
 #' @author Bhupendra Raut (www.baraut.info)
-#' @brief This R script reads netCDF files containing echo heights and rain classification
+#' @description This R script reads netCDF files containing echo heights and rain classification
 #' identify objects and estimates flow vectors, using phase correlation with FFT (Leese et al 1971).
 #' Then for each object the search region is predicted for next frame and the objects in that
 #' region (in frame2) are assign to the object in frame 1.
@@ -44,14 +45,15 @@ plot_objects_label<-function(labeled_image, xvalues, yvalues){
         c2 <- max(obj_index[, 2], na.rm = TRUE)
 
         obj_centerIndex <- c((r1+r2)/2, (c1+c2)/2)
-        text(x=xvalues[obj_centerIndex[1]], y=yvalues[obj_centerIndex[2]], toString(object), cex=0.7)
+        text(x=xvalues[obj_centerIndex[1]], y=yvalues[obj_centerIndex[2]],
+             toString(object), cex=0.7)
     }
 }
 
-#' Returns labeled image after removing single pixel objects
-clear_onePix_objects <- function(label_image) {
+#' Returns labeled image after removing objects smaller than min_size
+clear_smallEchoes <- function(label_image, min_size) {
     size_table <- table(label_image[label_image>0]) # remove zero values
-    onePix_objects <- as.vector(which(size_table==1))
+    onePix_objects <- as.vector(which(size_table < min_size))
 
     for(obj in onePix_objects){
         label_image <- replace(label_image, label_image == obj, 0.0)
@@ -68,7 +70,8 @@ get_vertical_class <- function(conv_height) {
     max_level <- c(14, 30, 40)
 
     for(i in 1:length(min_level)){
-        conv_height <- replace(conv_height, conv_height>=min_level[i] & conv_height<= max_level[i], i)
+        conv_height <- replace(conv_height, conv_height>=min_level[i] &
+                                   conv_height<= max_level[i], i)
     }
     return(conv_height) #classified
 }
@@ -368,7 +371,8 @@ create_outNC <- function(ofile, max_obs) {
     dim_echo <- ncdim_def("conv_echo", vals=1, units = "", unlim = TRUE,
                           longname = "unique id of convective echo", create_dimvar = TRUE)
 
-    dim_obs <- ncdim_def("obs", vals = seq(max_obs), units="", longname = "observation of a convective echo")
+    dim_obs <- ncdim_def("obs", vals = seq(max_obs), units="",
+                         longname = "observation of a convective echo")
 
     var_time <- ncvar_def("obs_time", units = "seconds since 1970-01-01 00:00:00 UTC",
                           dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
@@ -403,8 +407,10 @@ create_outNC <- function(ofile, max_obs) {
     description <- paste("The CPOL radar echoes of convective types were separated using Steiner classification scheme and tracked.")
 
     ncatt_put(outNC, varid = 0, attname = "_description", attval = description, prec = "text")
-    ncatt_put(outNC, varid = 0, attname = "_email", attval = "Bhupendra.Raut@monash.edu", prec = "text")
-    ncatt_put(outNC, varid = 0, attname = "_date_created", attval = date(), prec = "text")
+    ncatt_put(outNC, varid = 0, attname = "_email",
+              attval = "Bhupendra.Raut@monash.edu", prec = "text")
+    ncatt_put(outNC, varid = 0, attname = "_date_created",
+              attval = date(), prec = "text")
 
     invisible(outNC)
 }
@@ -417,13 +423,19 @@ write_update<-function(outNC, current_objects, obj_props, obs_time){
         nc_start <- c(current_objects$obs_num[object], current_objects$uid[object])
         nc_count <- c(1, 1)
 
-        ncvar_put(outNC, varid = "obs_time", obs_time, start = nc_start, count = nc_count)
-        ncvar_put(outNC, varid = "x", obj_props$x[object], start = nc_start, count = nc_count)
-        ncvar_put(outNC, varid = "y", obj_props$y[object], start = nc_start, count = nc_count)
+        ncvar_put(outNC, varid = "obs_time", obs_time, start = nc_start,
+                  count = nc_count)
+        ncvar_put(outNC, varid = "x", obj_props$x[object], start = nc_start,
+                  count = nc_count)
+        ncvar_put(outNC, varid = "y", obj_props$y[object], start = nc_start,
+                  count = nc_count)
         ncvar_put(outNC, varid = "size", obj_props$size[object], start = nc_start, count = nc_count)
-        ncvar_put(outNC, varid = "Cg", obj_props$Cg[object], start = nc_start, count = nc_count)
-        ncvar_put(outNC, varid = "Cb", obj_props$Cb[object], start = nc_start, count = nc_count)
-        ncvar_put(outNC, varid = "Co", obj_props$Co[object], start = nc_start, count = nc_count)
+        ncvar_put(outNC, varid = "Cg", obj_props$Cg[object], start = nc_start,
+                  count = nc_count)
+        ncvar_put(outNC, varid = "Cb", obj_props$Cb[object], start = nc_start,
+                  count = nc_count)
+        ncvar_put(outNC, varid = "Co", obj_props$Co[object], start = nc_start,
+                  count = nc_count)
     }
 
 }
@@ -465,6 +477,7 @@ get_objectProp <- function(image1, class1){
         objprop$y <- append(objprop$y, median(obj_index[, 1])) #center row
 
         obj_class <- class1[image1==obj] #classification of convection for the object
+
         #store number of pixels with classification Cg, Cb, Co etc.
         objprop$Cg <- append(objprop$Cg, length(obj_class[obj_class==1]))
         objprop$Cb <- append(objprop$Cb, length(obj_class[obj_class==2]))
@@ -474,10 +487,10 @@ get_objectProp <- function(image1, class1){
     invisible(objprop)
 }
 
-#' removes dead objects, updates living objects and assign new uids to born objects.
+#' removes dead objects, updates living objects and assign new uids to new born objects.
 #' Also, updates number of observations for each echo.
-update_current_objects <- function(frame2, current_objects){
-    nobj <- max(frame2)
+update_current_objects <- function(frame1, current_objects){
+    nobj <- max(frame1)
     objects_mat <- matrix(data = NA, ncol = 4, nrow = nobj)
 
     objects_mat[, 1] <- seq(nobj) #id1
@@ -513,6 +526,7 @@ time <- ncvar_get(ncfile, varid="time")
 
 dbz_height <-replace(dbz_height, steiner != 2, 0.0)      #set non-convective pixels to zeros
 dbz_height <- replace(dbz_height, is.na(dbz_height), 0.0)     #remove NAs
+
 labeled_echo <- bwlabel(dbz_height)               #identify and label objects
 conv_class <- get_vertical_class(dbz_height) #classifictaion
 
@@ -521,16 +535,18 @@ rm(steiner)
 
 
 scan <-96
+
 search_margin <- 5 #pixels
 flow_margin <- 10 #pixels
-stdFlow_mag <- 3
-large_num <- 100000
-max_obs<- 100  #longest track that will be recorded
-uid_counter <- 1
+stdFlow_mag <- 3 #flow will not be faster than this
+large_num <- 100000  #a very large number
+max_obs<- 100  #longest track that is likely to be recorded
+uid_counter <- 1 #starting unique id
+min_size <- 2
 
 # label objects and remove single pixel echoes.
-frame1 <-clear_onePix_objects(labeled_echo[, , scan])
-frame2 <-clear_onePix_objects(labeled_echo[, , scan+1])
+frame1 <-clear_smallEchoes(labeled_echo[, , scan], min_size)
+frame2 <-clear_smallEchoes(labeled_echo[, , scan+1], min_size)
 class1 <- conv_class[, , scan]
 class2 <- conv_class[, , scan+1]
 
@@ -551,7 +567,7 @@ write_update(outNC, current_objects, obj_props, time[1])
 # here will be a loop
 frame1 <- frame2
 class1 <- class2
-frame2 <- clear_onePix_objects(labeled_echo[, , scan+2])
+frame2 <- clear_smallEchoes(labeled_echo[, , scan+2], min_size)
 pairs <- get_matchPairs(frame1, frame2)
 
 current_objects <- update_current_objects(frame1, current_objects)
@@ -571,3 +587,10 @@ dev.off()
 
 # Stop the clock
 print(proc.time() - start_time)
+
+
+
+pdf("function_calls.pdf", width=12, height=8)
+foodweb(border = TRUE, expand.xbox = 1.5, boxcolor = "skyblue",
+        textcolor = "black", cex = 1, lwd=2)
+dev.off()
