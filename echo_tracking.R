@@ -65,7 +65,7 @@ clear_smallEchoes <- function(label_image, min_size) {
 
 #' returns vertical classification Cg=1, Cb=2, Co=3
 get_vertical_class <- function(conv_height) {
-    #min max heigths for classification
+    #min max scan levels for classification
     min_level <- c(5, 15, 31)
     max_level <- c(14, 30, 40)
 
@@ -104,7 +104,7 @@ get_objAmbientFlow <- function(obj_extent, img1, img2, margin) {
 
     dims <- dim(img1)
     if(r1<=0 || c1 <=0 || r2>dims[1] || c2 > dims[2]){
-        return(c(0, 0))
+        return(c(0, 0))                         #if echo is at the image boundary
     }
 
     flow_region1 <- img1[r1:r2, c1:c2]
@@ -114,7 +114,28 @@ get_objAmbientFlow <- function(obj_extent, img1, img2, margin) {
 }
 
 
-#' computs cross-covariance using FFT
+#' Estimates flow vectors in two images using cross covariance of the images.
+fft_flowVectors <- function (im1, im2) {
+    if(max(im1)==0 || max(im2)==0){
+        return(c(0, 0))                         #if no object found
+    }
+
+    #im1 <- replace(im1, im1==0, runif(1))       # add noise to image background
+    #im2 <- replace(im2, im1==0, runif(1))       # This may help when objects are bigger
+
+    crossCov <- fft_crossCov(im1, im2)
+    cov_smooth <- blur(as.im(crossCov))
+
+    dims<-dim(im1)
+
+    pshift <- which(cov_smooth$v==max(cov_smooth$v),arr.ind=TRUE)
+    pshift <- pshift-(dims[1]/2)
+
+    return(c(pshift[1], pshift[2]))
+}
+
+
+#' computs cross-covariance using FFT, returns shifted covariance image
 fft_crossCov <- function (img1, img2) {
     fft1_conj <- Conj(fft(img1)) #complex conjugate
     fft2 <- fft(img2)
@@ -123,6 +144,7 @@ fft_crossCov <- function (img1, img2) {
 
     crossCov <- fft(C, inv=TRUE)/length(C)
     crossCov <- Re(crossCov)
+    return(fft_shift(crossCov))
 }
 
 #' Rearranges the crossCov matrix so that 'zero' frequency or DC component
@@ -151,26 +173,7 @@ fft_shift <- function(fft_mat) {
     }
 }
 
-#' Estimates flow vectors in two images
-fft_flowVectors <- function (im1, im2) {
-    if(max(im1)==0 || max(im2)==0){
-        return(c(0, 0))
-    }
 
-    im1 <- replace(im1, im1==0, runif(1)) # add noise to image background
-    im2 <- replace(im2, im1==0, runif(1)) # This may help when objects are bigger
-
-    crossCov <- fft_crossCov(im1, im2)
-    cov_shifted <- fft_shift(crossCov)
-    cov_smooth <- blur(as.im(cov_shifted))
-
-    dims<-dim(im1)
-
-    pshift <- which(cov_smooth$v==max(cov_smooth$v),arr.ind=TRUE)
-    pshift <- pshift-(dims[1]/2)
-
-    return(c(pshift[1], pshift[2]))
-}
 
 #' flow vectors magnitude is cut down if more than given value
 get_std_flowVector<-function(obj_extent, img1, img2, margin, magnitude){
