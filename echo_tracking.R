@@ -225,7 +225,7 @@ check_searchBox <- function(search_box, img_dims){
     }
 }
 
-#' Given the search box and image2, finds objects in the region
+#' Given the search box and image2, returns objects in the region
 find_objects <- function(search_box, image2) {
     #if search box is NA then object left the image
     if(is.na(search_box[1])){
@@ -247,7 +247,8 @@ get_ratio<-function(x, y){
 }
 
 
-#' computes discrepancy for a single object
+#' computes discrepancy for a single object. Check how it is computed.
+#' This parameter has most effect on the acccuracy of tracks.
 get_discrepancy <- function(obj_found, image2, search_box, obj1_extent) {
     dist_pred <- c(NULL)
     dist_actual <- c(NULL)
@@ -384,7 +385,13 @@ create_outNC <- function(ofile, max_obs) {
     var_y <- ncvar_def("y", units = "Km", longname = "distance from Radar",
                        dim = list(dim_obs, dim_echo), missval = -999.0, prec = "float")
 
-    var_npix <- ncvar_def("size", units = "pixels", longname = "size of the echo in pixels",
+    var_npix <- ncvar_def("area", units = "pixels", longname = "area of the echo in pixels",
+                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
+
+    var_lth <- ncvar_def("length", units = "pixels", longname = "length of the echo in pixels",
+                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
+
+    var_bth <- ncvar_def("breadth", units = "pixels", longname = "breadth of the echo in pixels",
                           dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
 
     var_ncg <- ncvar_def("Cg", units = "pixels", longname = "num of Cu Congestus pixels",
@@ -396,7 +403,7 @@ create_outNC <- function(ofile, max_obs) {
     var_nco <- ncvar_def("Co", units = "pixels", longname = "num of Cu overshooting pixels",
                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
 
-    var_list <- list(var_time, var_x, var_y, var_npix, var_ncg, var_ncb, var_nco)
+    var_list <- list(var_time, var_x, var_y, var_npix, var_lth, var_bth, var_ncg, var_ncb, var_nco)
 
 
     outNC <- nc_create(filename = ofile, vars = var_list)
@@ -407,9 +414,12 @@ create_outNC <- function(ofile, max_obs) {
 
     description <- paste("The CPOL radar echoes of convective types were separated using Steiner classification scheme and tracked.")
 
-    ncatt_put(outNC, varid = 0, attname = "_description", attval = description, prec = "text")
-    ncatt_put(outNC, varid = 0, attname = "_email",
-              attval = "Bhupendra.Raut@monash.edu", prec = "text")
+    ncatt_put(outNC, varid = 0, attname = "_description",
+              attval = description, prec = "text")
+    ncatt_put(outNC, varid = 0, attname = "_creator",
+              attval = "Bhupendra Raut", prec = "text")
+    ncatt_put(outNC, varid = 0, attname = "_url",
+              attval = "www.baraut.info", prec = "text")
     ncatt_put(outNC, varid = 0, attname = "_date_created",
               attval = date(), prec = "text")
 
