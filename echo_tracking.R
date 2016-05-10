@@ -360,7 +360,8 @@ survival_stats <- function(pairs, num_obj2) {
 #' creates output netcdf file for radar echo tracjecories.
 create_outNC <- function(ofile, max_obs) {
     if(file.exists(ofile)){
-        stop(paste(ofile, "exists."))
+        print(paste("removing existing file", basename(ofile)))
+        file.remove(ofile)
     }
 
 
@@ -408,19 +409,24 @@ create_outNC <- function(ofile, max_obs) {
     invisible(outNC)
 }
 
-#' Function writes properties and uids for all objects in first frame.
-write_first<-function(outNC, current_objects, obj_props, time1){
+#' Function writes properties and uids for all objects.
+write_update<-function(outNC, current_objects, obj_props, obs_time){
     nobj <- length(current_objects$id1)
 
-    ncvar_put(outNC, varid = "obs_time", rep(time1, nobj), start = c(1, current_objects$uid[1]), count =c(1, nobj))
-    ncvar_put(outNC, varid = "x", obj_props$x, start = c(1, current_objects$uid[1]), count =c(1, nobj))
-    ncvar_put(outNC, varid = "y", obj_props$y, start = c(1, current_objects$uid[1]), count =c(1, nobj))
-    ncvar_put(outNC, varid = "size", obj_props$size, start = c(1, current_objects$uid[1]), count =c(1, nobj))
-    ncvar_put(outNC, varid = "Cg", obj_props$Cg, start = c(1, current_objects$uid[1]), count =c(1, nobj))
-    ncvar_put(outNC, varid = "Cb", obj_props$Cb, start = c(1, current_objects$uid[1]), count =c(1, nobj))
-    ncvar_put(outNC, varid = "Co", obj_props$Co, start = c(1, current_objects$uid[1]), count =c(1, nobj))
-}
+    for(object in seq(nobj)){
+        nc_start <- c(current_objects$obs_num[object], current_objects$uid[object])
+        nc_count <- c(1, 1)
 
+        ncvar_put(outNC, varid = "obs_time", obs_time, start = nc_start, count = nc_count)
+        ncvar_put(outNC, varid = "x", obj_props$x[object], start = nc_start, count = nc_count)
+        ncvar_put(outNC, varid = "y", obj_props$y[object], start = nc_start, count = nc_count)
+        ncvar_put(outNC, varid = "size", obj_props$size[object], start = nc_start, count = nc_count)
+        ncvar_put(outNC, varid = "Cg", obj_props$Cg[object], start = nc_start, count = nc_count)
+        ncvar_put(outNC, varid = "Cb", obj_props$Cb[object], start = nc_start, count = nc_count)
+        ncvar_put(outNC, varid = "Co", obj_props$Co[object], start = nc_start, count = nc_count)
+    }
+
+}
 
 
 
@@ -472,7 +478,7 @@ get_objectProp <- function(image1, class1){
 #' Also, updates number of observations for each echo.
 update_current_objects <- function(frame2, current_objects){
     nobj <- max(frame2)
-    objects_mat <- matrix(data = NA, ncol = 3, nrow = nobj)
+    objects_mat <- matrix(data = NA, ncol = 4, nrow = nobj)
 
     objects_mat[, 1] <- seq(nobj) #id1
 
@@ -489,7 +495,7 @@ update_current_objects <- function(frame2, current_objects){
     objects_mat[, 3] <- as.vector(pairs) #as they are in frame2
 
     current_objects <- data.frame(objects_mat, row.names = NULL)
-    colnames(current_objects) <- c("id1", "uid", "id2")
+    colnames(current_objects) <- c("id1", "uid", "id2", "obs_num")
     invisible(current_objects)
 }
 
@@ -537,9 +543,7 @@ obj_props <- get_objectProp(frame1, class1)
 
 #------- test code
 outNC <- create_outNC(ofile = "~/Desktop/test.nc", max_obs = 100)
-write_first(outNC, current_objects, obj_props, time[1])
-
-
+write_update(outNC, current_objects, obj_props, time[1])
 
 
 
@@ -556,16 +560,6 @@ obj_props <- get_objectProp(frame1, class1)
 
 write_updates(outNC, current_objects, obj_props, curr_time)
 
-#' Writes updated trajectories to outNC file
-write_updates <- function(outNC, current_objects, obj_props, curr_time){
-
-
-
-    #Before we write this function, we need to add a field to current objects. obs_num
-}
-
-
-#------
 
 
 #plot
