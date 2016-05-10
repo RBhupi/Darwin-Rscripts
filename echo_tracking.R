@@ -77,6 +77,59 @@ get_vertical_class <- function(conv_height) {
 }
 
 
+#' given two images, it identifies the matching objects and pair them appropriatly.
+get_matchPairs <- function(image1, image2) {
+    obj_match <- locate_allObjects(image1, image2)
+    pairs <- match_pairs(obj_match) #1-to-1
+    return(pairs)
+}
+
+#' function matches objects into pairs, also removes bad pairs.
+match_pairs <- function(obj_match) {
+    pairs <- solve_LSAP(obj_match)
+
+    ## remove bad matching
+    for(pair in 1:length(pairs)){
+        if(obj_match[pair, pairs[pair]] >15){
+            pairs[pair] <- 0
+        }
+    }
+    return(pairs)
+}
+
+
+#' Function matches all the obejects in image 1 to objects in image 2
+locate_allObjects <- function(image1, image2) {
+    nObjects1 <- max(image1) #objects in first image
+    nObjects2 <- max(image2) #objects in second image
+
+
+    if(nObjects2==0 || nObjects1==0){
+        stop("No echoes to track!!!")
+    }
+
+    obj_match <- matrix(large_num, nrow = nObjects1, ncol = max(nObjects1, nObjects2))
+
+    ## here we match each object in image1 to all the near-by objects in image2.
+    for(obj_id1 in 1:nObjects1) {
+        obj1_extent <- get_objExtent(image1, obj_id1) #location and radius
+        shift <- get_std_flowVector(obj1_extent, image1, image2, flow_margin, stdFlow_mag)
+        print(paste("fft shift", toString(shift)))
+
+        search_box <- predict_searchExtent(obj1_extent, shift, search_margin)
+        search_box <- check_searchBox(search_box, dim(image2)) #search within the image
+        obj_found <- find_objects(search_box, image2)  # gives possible candidates
+        discrepancy <- get_discrepancy_all(obj_found, image2, search_box, obj1_extent)
+
+        obj_match <- save_objMatch(obj_id1, obj_found, discrepancy, obj_match)
+
+        print(paste(obj_id1, "==>", toString(obj_found)))
+    }
+
+    invisible(obj_match)
+}
+
+
 
 #' Takes in a labeled image and finds the redius and the center of the given object.
 get_objExtent <- function(labeled_image, obj_label) {
@@ -196,10 +249,7 @@ predict_searchExtent <- function(obj1_extent, shift, search_radius){
 }
 
 
-#' Returns  Euclidean distance between two vectors or matrices
-euclidean_dist <- function(vec1, vec2){
-    sqrt(sum((vec1-vec2)^2))
-}
+
 
 #' Returns NA if search box  outside the image or very small.
 check_searchBox <- function(search_box, img_dims){
@@ -238,35 +288,6 @@ find_objects <- function(search_box, image2) {
 }
 
 
-#' Retuns ratio (>=1) of bigger number to smaller number when given two number.
-get_ratio<-function(x, y){
-    if(x>=y)
-        return(x/y)
-    else
-        return(y/x)
-}
-
-
-#' computes discrepancy for a single object. Check how it is computed.
-#' This parameter has most effect on the acccuracy of tracks.
-get_discrepancy <- function(obj_found, image2, search_box, obj1_extent) {
-    dist_pred <- c(NULL)
-    dist_actual <- c(NULL)
-    for(target_obj in obj_found){
-        target_extent <- get_objExtent(image2, target_obj)
-        euc_dist<- euclidean_dist(target_extent$obj_center, search_box$center_pred)
-        dist_pred <- append(dist_pred, euc_dist)
-
-        euc_dist<- euclidean_dist(target_extent$obj_center, obj1_extent$obj_center)
-        dist_actual <- append(dist_actual, euc_dist)
-        size_changed <- get_ratio(target_extent$obj_size, obj1_extent$obj_size) #change in size
-
-        discrepancy <- dist_pred + size_changed + dist_actual
-
-    }
-    return(discrepancy)
-}
-
 
 #' Returns discrepancies of all the objects found within the search box or NA if
 #' no object is present.
@@ -301,66 +322,40 @@ save_objMatch <- function(obj_id1, obj_found, discrepancy, obj_match) {
 }
 
 
-#' Function matches all the obejects in image 1 to objects in image 2
-locate_allObjects <- function(image1, image2) {
-    nObjects1 <- max(image1) #objects in first image
-    nObjects2 <- max(image2) #objects in second image
+#' computes discrepancy for a single object. Check how it is computed.
+#' This parameter has most effect on the acccuracy of tracks.
+get_discrepancy <- function(obj_found, image2, search_box, obj1_extent) {
+    dist_pred <- c(NULL)
+    dist_actual <- c(NULL)
+    for(target_obj in obj_found){
+        target_extent <- get_objExtent(image2, target_obj)
+        euc_dist<- euclidean_dist(target_extent$obj_center, search_box$center_pred)
+        dist_pred <- append(dist_pred, euc_dist)
 
+        euc_dist<- euclidean_dist(target_extent$obj_center, obj1_extent$obj_center)
+        dist_actual <- append(dist_actual, euc_dist)
+        size_changed <- get_ratio(target_extent$obj_size, obj1_extent$obj_size) #change in size
 
-    if(nObjects2==0 || nObjects1==0){
-        stop("No echoes to track!!!")
+        discrepancy <- dist_pred + size_changed + dist_actual
+
     }
-
-    obj_match <- matrix(large_num, nrow = nObjects1, ncol = max(nObjects1, nObjects2))
-
-    ## here we match each object in image1 to all the near-by objects in image2.
-    for(obj_id1 in 1:nObjects1) {
-        obj1_extent <- get_objExtent(image1, obj_id1) #location and radius
-        shift <- get_std_flowVector(obj1_extent, image1, image2, flow_margin, stdFlow_mag)
-        print(paste("fft shift", toString(shift)))
-
-        search_box <- predict_searchExtent(obj1_extent, shift, search_margin)
-        search_box <- check_searchBox(search_box, dim(image2)) #search within the image
-        obj_found <- find_objects(search_box, image2)  # gives possible candidates
-        discrepancy <- get_discrepancy_all(obj_found, image2, search_box, obj1_extent)
-
-        obj_match <- save_objMatch(obj_id1, obj_found, discrepancy, obj_match)
-
-        print(paste(obj_id1, "==>", toString(obj_found)))
-    }
-
-    invisible(obj_match)
+    return(discrepancy)
 }
 
-#' given two images, it identifies the matching objects and pair them appropriatly.
-get_matchPairs <- function(image1, image2) {
-    obj_match <- locate_allObjects(image1, image2)
-    pairs <- match_pairs(obj_match) #1-to-1
-    return(pairs)
+#' Returns  Euclidean distance between two vectors or matrices
+euclidean_dist <- function(vec1, vec2){
+    sqrt(sum((vec1-vec2)^2))
 }
 
-#' function matches objects into pairs, also removes bad pairs.
-match_pairs <- function(obj_match) {
-    pairs <- solve_LSAP(obj_match)
-
-    ## remove bad matching
-    for(pair in 1:length(pairs)){
-        if(obj_match[pair, pairs[pair]] >15){
-            pairs[pair] <- 0
-        }
-    }
-    return(pairs)
+#' Retuns ratio (>=1) of bigger number to smaller number when given two number.
+get_ratio<-function(x, y){
+    if(x>=y)
+        return(x/y)
+    else
+        return(y/x)
 }
 
 
-#' returns a list with number of objects lived, died and born in this step.
-survival_stats <- function(pairs, num_obj2) {
-    pairs_vec <- as.vector(pairs)
-    obj_lived <- length(pairs_vec[pairs_vec>0])
-    obj_died <- length(pairs_vec)-obj_lived
-    obj_born <- num_obj2 - obj_lived
-    return(list(lived=obj_lived, died=obj_died, born=obj_born))
-}
 
 #' creates output netcdf file for radar echo tracjecories.
 create_outNC <- function(ofile, max_obs) {
@@ -468,6 +463,33 @@ init_uids <- function(first_frame, pairs){
     return(current_objects)
 }
 
+
+#' removes dead objects, updates living objects and assign new uids to new born objects.
+#' Also, updates number of observations for each echo.
+update_current_objects <- function(frame1, current_objects){
+    nobj <- max(frame1)
+    objects_mat <- matrix(data = NA, ncol = 4, nrow = nobj)
+
+    objects_mat[, 1] <- seq(nobj) #id1
+
+    for (obj in seq(nobj)){
+        if(obj %in% current_objects$id2){
+            objects_mat[obj, 2] <- current_objects$uid[current_objects$id2==obj]
+            objects_mat[obj, 4] <- current_objects$obs_num[current_objects$id2==obj]+1
+        } else {
+            objects_mat[obj, 2] <- next_uid()
+            objects_mat[obj, 4] <- 1 #first observation of the echo
+        }
+    }
+
+    objects_mat[, 3] <- as.vector(pairs) #as they are in frame2
+
+    current_objects <- data.frame(objects_mat, row.names = NULL)
+    colnames(current_objects) <- c("id1", "uid", "id2", "obs_num")
+    invisible(current_objects)
+}
+
+
 #' Retuns next unique id and increament the uid counter.
 next_uid<-function(){
     this_uid <- uid_counter
@@ -498,31 +520,15 @@ get_objectProp <- function(image1, class1){
     invisible(objprop)
 }
 
-#' removes dead objects, updates living objects and assign new uids to new born objects.
-#' Also, updates number of observations for each echo.
-update_current_objects <- function(frame1, current_objects){
-    nobj <- max(frame1)
-    objects_mat <- matrix(data = NA, ncol = 4, nrow = nobj)
 
-    objects_mat[, 1] <- seq(nobj) #id1
-
-    for (obj in seq(nobj)){
-        if(obj %in% current_objects$id2){
-            objects_mat[obj, 2] <- current_objects$uid[current_objects$id2==obj]
-            objects_mat[obj, 4] <- current_objects$obs_num[current_objects$id2==obj]+1
-        } else {
-            objects_mat[obj, 2] <- next_uid()
-            objects_mat[obj, 4] <- 1 #first observation of the echo
-        }
-    }
-
-    objects_mat[, 3] <- as.vector(pairs) #as they are in frame2
-
-    current_objects <- data.frame(objects_mat, row.names = NULL)
-    colnames(current_objects) <- c("id1", "uid", "id2", "obs_num")
-    invisible(current_objects)
+#' returns a list with number of objects lived, died and born in this step.
+survival_stats <- function(pairs, num_obj2) {
+    pairs_vec <- as.vector(pairs)
+    obj_lived <- length(pairs_vec[pairs_vec>0])
+    obj_died <- length(pairs_vec)-obj_lived
+    obj_born <- num_obj2 - obj_lived
+    return(list(lived=obj_lived, died=obj_died, born=obj_born))
 }
-
 
 #----------------------------------------------------------------Calling Program
 setwd("~/data/darwin_radar/2d/")
