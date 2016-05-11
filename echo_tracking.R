@@ -60,7 +60,7 @@ get_filteredFrame <- function(ncfile, scan_num, min_size) {
 #' returns a single radar scan with echo objects lebeled. smaller objects are removed.
 get_classFrame <- function(ncfile, scan_num) {
     echo_height <- get_convHeight(ncfile, scan_num)
-    get_vertical_class(dbz_height)
+    get_vertical_class(echo_height)
 }
 
 
@@ -102,15 +102,25 @@ get_vertical_class <- function(conv_height) {
 
 #' given two images, it identifies the matching objects and pair them appropriatly.
 get_matchPairs <- function(image1, image2) {
+    nObjects1 <- max(image1) #objects in first image
+    nObjects2 <- max(image2) #objects in second image
+
+    if(nObjects1==0){ #error if first image is empty
+        stop("No echoes found in the first scan.")
+    } else if (nObjects2==0){ #all objects will be zero if second image is empty
+        zero_pairs <- rep(0, nObjects1)
+        return(zero_pairs)
+    }
+
     obj_match <- locate_allObjects(image1, image2)
     pairs <- match_pairs(obj_match) #1-to-1
-    return(pairs)
+    return(as.vector(pairs))
 }
 
 #' function matches objects into pairs, also removes bad pairs.
 match_pairs <- function(obj_match) {
     pairs <- solve_LSAP(obj_match)
-
+    pairs <- as.vector(pairs)
     ## remove bad matching
     for(pair in 1:length(pairs)){
         if(obj_match[pair, pairs[pair]] >15){
@@ -137,7 +147,7 @@ locate_allObjects <- function(image1, image2) {
     for(obj_id1 in 1:nObjects1) {
         obj1_extent <- get_objExtent(image1, obj_id1) #location and radius
         shift <- get_std_flowVector(obj1_extent, image1, image2, flow_margin, stdFlow_mag)
-        print(paste("fft shift", toString(shift)))
+        #print(paste("fft shift", toString(shift)))
 
         search_box <- predict_searchExtent(obj1_extent, shift, search_margin)
         search_box <- check_searchBox(search_box, dim(image2)) #search within the image
@@ -146,7 +156,7 @@ locate_allObjects <- function(image1, image2) {
 
         obj_match <- save_objMatch(obj_id1, obj_found, discrepancy, obj_match)
 
-        print(paste(obj_id1, "==>", toString(obj_found)))
+        #print(paste(obj_id1, "==>", toString(obj_found)))
     }
 
     invisible(obj_match)
@@ -394,7 +404,7 @@ create_outNC <- function(ofile, max_obs) {
                           longname = "unique id of convective echo", create_dimvar = TRUE)
 
     dim_obs <- ncdim_def("obs", vals = seq(max_obs), units="",
-                         longname = "observation of a convective echo")
+                         longname = "observation of a convective echo", create_dimvar = TRUE)
 
     var_time <- ncvar_def("obs_time", units = "seconds since 1970-01-01 00:00:00 UTC",
                           dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
@@ -417,7 +427,7 @@ create_outNC <- function(ofile, max_obs) {
     var_nco <- ncvar_def("Co", units = "pixels", longname = "num of Cu overshooting pixels",
                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
 
-    var_list <- list(var_time, var_x, var_y, var_npix, var_lth, var_bth, var_ncg, var_ncb, var_nco)
+    var_list <- list(var_time, var_x, var_y, var_npix, var_ncg, var_ncb, var_nco)
 
 
     outNC <- nc_create(filename = ofile, vars = var_list)
@@ -467,13 +477,12 @@ init_uids <- function(first_frame, pairs){
     nobj <- max(first_frame) #number of objects in frame1
     objects_mat <- matrix(data = NA, ncol = 4, nrow = nobj)
 
-    objects_mat[, 1] <- seq(nobj)
-    objects_mat[, 2] <- seq(nobj)
+    objects_mat[, 1] <- seq(nobj) #id1
+    objects_mat[, 2] <- next_uid(count = nobj) #unique ids
     objects_mat[, 3] <- as.vector(pairs) #as they are in frame2
     objects_mat[, 4] <-rep(1, nobj) #observation number for the echo
     current_objects <- data.frame(objects_mat, row.names = NULL)
     colnames(current_objects) <- c("id1", "uid", "id2", "obs_num")
-    uid_counter <<- nobj
     return(current_objects)
 }
 
@@ -484,7 +493,7 @@ update_current_objects <- function(frame1, pairs, current_objects){
     nobj <- max(frame1)
     objects_mat <- matrix(data = NA, ncol = 4, nrow = nobj)
 
-    objects_mat[, 1] <- seq(nobj) #id1
+    objects_mat[, 1] <- seq(nobj) #this is id1
 
     for (obj in seq(nobj)){
         if(obj %in% current_objects$id2){
@@ -504,10 +513,10 @@ update_current_objects <- function(frame1, pairs, current_objects){
 }
 
 
-#' Retuns next unique id and increament the uid counter.
-next_uid<-function(){
-    this_uid <- uid_counter
-    uid_counter <<-uid_counter+1
+#' Retuns sequence of next unique ids and increament the uid_counter.
+next_uid<-function(count=1){
+    this_uid <- uid_counter + 1:count
+    uid_counter <<- uid_counter + count
     return(this_uid)
 }
 
@@ -550,75 +559,60 @@ flow_margin <- 10 #pixels
 stdFlow_mag <- 3 #fft_flow will not be faster than this
 large_num <- 100000  #a very large number
 max_obs<- 100  #longest track that is likely to be recorded
-uid_counter <- 1 #starting unique id
+uid_counter <- 0 #start unique id with zero.
 min_size <- 2  #objects smaller than this will be filter
+newRain <- TRUE #is this new rainy scan after dry period?
 #==============================================================================#
 
 #----------------------------------------------------------------Calling Program
 setwd("~/data/darwin_radar/2d/")
 infile_name <- "./cpol_2D_0506.nc" #a file for a season
+
+outNC <- create_outNC(ofile = "~/Desktop/test.nc", max_obs = 100)
+
 #read x, y and time from the file
 ncfile <- nc_open(infile_name)
 x <- ncvar_get(ncfile, varid = "x")
 y <- ncvar_get(ncfile, varid = "y")
 time <- ncvar_get(ncfile, varid="time")
-nscans <- length(time)
+nscans <- 144 #length(time)
 
+frame2 <- get_filteredFrame(ncfile, 1, min_size)
+class2 <- get_classFrame(ncfile, 1) #classifictaion
 
-for(scan in 1:1){ #seq(nscans-1)
-    scan <- 96 #remove this when done
-    frame1 <- get_filteredFrame(ncfile, scan, min_size)
-    frame2 <- get_filteredFrame(ncfile, scan+1, min_size)
+for(scan in 2:nscans){
+    frame1 <- frame2
+    class1 <- class2
 
-    conv_class <- get_vertical_class(dbz_height) #classifictaion
+    frame2 <- get_filteredFrame(ncfile, scan, min_size)
+    class2 <- get_classFrame(ncfile, scan) #classifictaion
 
-
-    # label objects and remove single pixel echoes.
-
-    class1 <- conv_class[, , scan]
-    class2 <- conv_class[, , scan+1]
+    #skip if no echoes
+    if(max(frame1)==0){         #if no echoes in frame1
+        newRain = TRUE          #next rain will be newRain
+        next
+    }
 
     pairs <- get_matchPairs(frame1, frame2)
 
     num_obj2 <- max(frame2)
     obj_survival <- survival_stats(pairs, num_obj2)
-    current_objects <- init_uids(frame1, pairs) #initiate ids from 1
     obj_props <- get_objectProp(frame1, class1)
 
-    #------- test code
-    outNC <- create_outNC(ofile = "~/Desktop/test.nc", max_obs = 100)
+    if(newRain){    #if this is newRain scan, init ids
+        current_objects <- init_uids(frame1, pairs) #initiate ids and return
+        newRain <- FALSE
+    } else {        #else update old ids
+        current_objects <- update_current_objects(frame1, pairs, current_objects)
+    }
+
     write_update(outNC, current_objects, obj_props, time[1])
-
-
-
-    # now we need to take next image and repeat the above steps
-    # here will be a loop
-    frame1 <- frame2
-    class1 <- class2
-    frame2 <- clear_smallEchoes(labeled_echo[, , scan+2], min_size)
-    pairs <- get_matchPairs(frame1, frame2)
-
-    current_objects <- update_current_objects(frame1, pairs, current_objects)
-
-    obj_props <- get_objectProp(frame1, class1)
-
-    write_update(outNC, current_objects, obj_props, curr_time)
-
 }
 
-#plot
-pdf(paste("object_label_", scan, ".png", sep=""), width=12, height=8)
-par(mfrow=c(1,2))
-plot_objects_label(frame1, x, y)
-plot_objects_label(frame2, x, y)
-dev.off()
+nc_close(ncfile)
+
+ncvar_put(outNC, varid = "conv_echo", vals = seq(uid_counter), start = 1, count = uid_counter)
+nc_close(outNC)
 
 # Stop the clock
 print(proc.time() - start_time)
-
-
-
-pdf("function_calls.pdf", width=12, height=8)
-foodweb(border = TRUE, expand.xbox = 1.5, boxcolor = "skyblue",
-        textcolor = "black", cex = 1, lwd=2)
-dev.off()
