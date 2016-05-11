@@ -141,8 +141,10 @@ get_objExtent <- function(labeled_image, obj_label) {
 
     obj_radius<- max(c(rlength, clength))/2 #maximum possible object radius
     obj_center <- c(min(obj_index[, 1])+obj_radius, min(obj_index[, 2]) + obj_radius)
-    obj_size <- length(obj_index[, 1])  #size in pixels
-    return(list(obj_center=obj_center, obj_radius=obj_radius, obj_size=obj_size))
+    obj_area <- length(obj_index[, 1])  #size in pixels
+
+    obj_extent<-list(obj_center=obj_center, obj_radius=obj_radius, obj_area=obj_area)
+    return(obj_extent)
 }
 
 
@@ -334,7 +336,7 @@ get_discrepancy <- function(obj_found, image2, search_box, obj1_extent) {
 
         euc_dist<- euclidean_dist(target_extent$obj_center, obj1_extent$obj_center)
         dist_actual <- append(dist_actual, euc_dist)
-        size_changed <- get_ratio(target_extent$obj_size, obj1_extent$obj_size) #change in size
+        size_changed <- get_ratio(target_extent$obj_area, obj1_extent$obj_area) #change in size
 
         discrepancy <- dist_pred + size_changed + dist_actual
 
@@ -429,19 +431,14 @@ write_update<-function(outNC, current_objects, obj_props, obs_time){
         nc_start <- c(current_objects$obs_num[object], current_objects$uid[object])
         nc_count <- c(1, 1)
 
-        ncvar_put(outNC, varid = "obs_time", obs_time, start = nc_start,
-                  count = nc_count)
-        ncvar_put(outNC, varid = "x", obj_props$x[object], start = nc_start,
-                  count = nc_count)
-        ncvar_put(outNC, varid = "y", obj_props$y[object], start = nc_start,
-                  count = nc_count)
-        ncvar_put(outNC, varid = "size", obj_props$size[object], start = nc_start, count = nc_count)
-        ncvar_put(outNC, varid = "Cg", obj_props$Cg[object], start = nc_start,
-                  count = nc_count)
-        ncvar_put(outNC, varid = "Cb", obj_props$Cb[object], start = nc_start,
-                  count = nc_count)
-        ncvar_put(outNC, varid = "Co", obj_props$Co[object], start = nc_start,
-                  count = nc_count)
+        ncvar_put(outNC, varid = "obs_time", obs_time, start = nc_start, count = nc_count)
+        ncvar_put(outNC, varid = "x", obj_props$x[object], start = nc_start, count = nc_count)
+        ncvar_put(outNC, varid = "y", obj_props$y[object], start = nc_start, count = nc_count)
+        ncvar_put(outNC, varid = "area", obj_props$area[object],  start = nc_start, count = nc_count)
+
+        ncvar_put(outNC, varid = "Cg", obj_props$Cg[object], start = nc_start, count = nc_count)
+        ncvar_put(outNC, varid = "Cb", obj_props$Cb[object], start = nc_start, count = nc_count)
+        ncvar_put(outNC, varid = "Co", obj_props$Co[object], start = nc_start, count = nc_count)
     }
 
 }
@@ -505,12 +502,11 @@ get_objectProp <- function(image1, class1){
     for(obj in seq(nobj)){
         obj_index <- which(image1==obj, arr.ind = TRUE)
         objprop$id1 <- append (objprop$id1, obj)  #id in frame1
-        objprop$size <- append(objprop$size, length(obj_index[, 1]))
         objprop$x <- append(objprop$x, median(obj_index[, 2])) #center column
         objprop$y <- append(objprop$y, median(obj_index[, 1])) #center row
+        objprop$area <- append(objprop$area, length(obj_index[, 1]))
 
         obj_class <- class1[image1==obj] #classification of convection for the object
-
         #store number of pixels with classification Cg, Cb, Co etc.
         objprop$Cg <- append(objprop$Cg, length(obj_class[obj_class==1]))
         objprop$Cb <- append(objprop$Cb, length(obj_class[obj_class==2]))
@@ -591,7 +587,7 @@ current_objects <- update_current_objects(frame1, current_objects)
 
 obj_props <- get_objectProp(frame1, class1)
 
-write_updates(outNC, current_objects, obj_props, curr_time)
+write_update(outNC, current_objects, obj_props, curr_time)
 
 
 
