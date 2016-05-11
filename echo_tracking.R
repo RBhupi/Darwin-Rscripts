@@ -50,6 +50,29 @@ plot_objects_label<-function(labeled_image, xvalues, yvalues){
     }
 }
 
+#' returns a single radar scan with echo objects lebeled. smaller objects are removed.
+get_filteredFrame <- function(ncfile, scan_num, min_size) {
+    echo_height <- get_convHeight(ncfile, scan_num)
+    labeled_echo <- bwlabel(echo_height)          #label objects
+    frame <-clear_smallEchoes(labeled_echo, min_size)
+}
+
+#' returns a single radar scan with echo objects lebeled. smaller objects are removed.
+get_classFrame <- function(ncfile, scan_num) {
+    echo_height <- get_convHeight(ncfile, scan_num)
+    get_vertical_class(dbz_height)
+}
+
+
+#' reads height and classification data and replaces non-convective amd missing pixels with zero.
+get_convHeight <- function(ncfile, scan) {
+    dbz_height <- ncvar_get(ncfile, varid = "zero_dbz_cont", start = c(1, 1, scan), count = c(-1, -1, 1))
+    steiner <- ncvar_get(ncfile, varid = "steiner_class", start = c(1, 1, scan), count = c(-1, -1, 1))
+
+    dbz_height <-replace(dbz_height, steiner != 2, 0.0)      #set non-convective pixels to zeros
+    dbz_height <- replace(dbz_height, is.na(dbz_height), 0.0)     #remove NAs
+}
+
 #' Returns labeled image after removing objects smaller than min_size
 clear_smallEchoes <- function(label_image, min_size) {
     size_table <- table(label_image[label_image>0]) # remove zero values
@@ -541,26 +564,17 @@ y <- ncvar_get(ncfile, varid = "y")
 time <- ncvar_get(ncfile, varid="time")
 nscans <- length(time)
 
+
 for(scan in 1:1){ #seq(nscans-1)
-    scan <- 96
-    dbz_height <- ncvar_get(ncfile, varid = "zero_dbz_cont", start = c(1, 1, scan), count = c(-1, -1, 2))
-    steiner <- ncvar_get(ncfile, varid = "steiner_class", start = c(1, 1, scan), count = c(-1, -1, 2))
+    scan <- 96 #remove this when done
+    frame1 <- get_filteredFrame(ncfile, scan, min_size)
+    frame2 <- get_filteredFrame(ncfile, scan+1, min_size)
 
-    dbz_height <-replace(dbz_height, steiner != 2, 0.0)      #set non-convective pixels to zeros
-    dbz_height <- replace(dbz_height, is.na(dbz_height), 0.0)     #remove NAs
-
-    labeled_echo <- bwlabel(dbz_height)          #identify and label objects
     conv_class <- get_vertical_class(dbz_height) #classifictaion
 
 
-
-
-
-
-
     # label objects and remove single pixel echoes.
-    frame1 <-clear_smallEchoes(labeled_echo[, , scan], min_size)
-    frame2 <-clear_smallEchoes(labeled_echo[, , scan+1], min_size)
+
     class1 <- conv_class[, , scan]
     class2 <- conv_class[, , scan+1]
 
