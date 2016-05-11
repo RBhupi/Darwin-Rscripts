@@ -385,12 +385,6 @@ create_outNC <- function(ofile, max_obs) {
     var_npix <- ncvar_def("area", units = "pixels", longname = "area of the echo in pixels",
                           dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
 
-    var_lth <- ncvar_def("length", units = "pixels", longname = "length of the echo in pixels",
-                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
-
-    var_bth <- ncvar_def("breadth", units = "pixels", longname = "breadth of the echo in pixels",
-                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
-
     var_ncg <- ncvar_def("Cg", units = "pixels", longname = "num of Cu Congestus pixels",
                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
 
@@ -506,7 +500,7 @@ get_objectProp <- function(image1, class1){
         objprop$y <- append(objprop$y, median(obj_index[, 1])) #center row
         objprop$area <- append(objprop$area, length(obj_index[, 1]))
 
-        obj_class <- class1[image1==obj] #classification of convection for the object
+        obj_class <- class1[image1==obj] #class of convection for the object
         #store number of pixels with classification Cg, Cb, Co etc.
         objprop$Cg <- append(objprop$Cg, length(obj_class[obj_class==1]))
         objprop$Cb <- append(objprop$Cb, length(obj_class[obj_class==2]))
