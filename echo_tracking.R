@@ -457,7 +457,7 @@ init_uids <- function(first_frame, pairs){
 
 #' removes dead objects, updates living objects and assign new uids to new born objects.
 #' Also, updates number of observations for each echo.
-update_current_objects <- function(frame1, current_objects){
+update_current_objects <- function(frame1, pairs, current_objects){
     nobj <- max(frame1)
     objects_mat <- matrix(data = NA, ncol = 4, nrow = nobj)
 
@@ -520,70 +520,77 @@ survival_stats <- function(pairs, num_obj2) {
     return(list(lived=obj_lived, died=obj_died, born=obj_born))
 }
 
-#----------------------------------------------------------------Calling Program
-setwd("~/data/darwin_radar/2d/")
-infile_name <- "./cpol_2D_0506.nc"
 
-ncfile <- nc_open(infile_name)
-x <- ncvar_get(ncfile, varid = "x")
-y <- ncvar_get(ncfile, varid = "y")
-dbz_height <- ncvar_get(ncfile, varid = "zero_dbz_cont", start = c(1, 1, 1), count = c(-1, -1, 100))
-steiner <- ncvar_get(ncfile, varid = "steiner_class", start = c(1, 1, 1), count = c(-1, -1, 100))
-time <- ncvar_get(ncfile, varid="time")
-
-dbz_height <-replace(dbz_height, steiner != 2, 0.0)      #set non-convective pixels to zeros
-dbz_height <- replace(dbz_height, is.na(dbz_height), 0.0)     #remove NAs
-
-labeled_echo <- bwlabel(dbz_height)               #identify and label objects
-conv_class <- get_vertical_class(dbz_height) #classifictaion
-
-rm(dbz_height)
-rm(steiner)
-
-
-scan <-96
-
+#------------------- Settings for tracking method etc. ------------------------#
 search_margin <- 5 #pixels
 flow_margin <- 10 #pixels
-stdFlow_mag <- 3 #flow will not be faster than this
+stdFlow_mag <- 3 #fft_flow will not be faster than this
 large_num <- 100000  #a very large number
 max_obs<- 100  #longest track that is likely to be recorded
 uid_counter <- 1 #starting unique id
-min_size <- 2  #smaller objects will be filter
+min_size <- 2  #objects smaller than this will be filter
+#==============================================================================#
 
-# label objects and remove single pixel echoes.
-frame1 <-clear_smallEchoes(labeled_echo[, , scan], min_size)
-frame2 <-clear_smallEchoes(labeled_echo[, , scan+1], min_size)
-class1 <- conv_class[, , scan]
-class2 <- conv_class[, , scan+1]
+#----------------------------------------------------------------Calling Program
+setwd("~/data/darwin_radar/2d/")
+infile_name <- "./cpol_2D_0506.nc" #a file for a season
+#read x, y and time from the file
+ncfile <- nc_open(infile_name)
+x <- ncvar_get(ncfile, varid = "x")
+y <- ncvar_get(ncfile, varid = "y")
+time <- ncvar_get(ncfile, varid="time")
+nscans <- length(time)
 
-pairs <- get_matchPairs(frame1, frame2)
+for(scan in 1:1){ #seq(nscans-1)
+    scan <- 96
+    dbz_height <- ncvar_get(ncfile, varid = "zero_dbz_cont", start = c(1, 1, scan), count = c(-1, -1, 2))
+    steiner <- ncvar_get(ncfile, varid = "steiner_class", start = c(1, 1, scan), count = c(-1, -1, 2))
 
-num_obj2 <- max(frame2)
-obj_survival <- survival_stats(pairs, num_obj2)
-current_objects <- init_uids(frame1, pairs) #initiate ids from 1
-obj_props <- get_objectProp(frame1, class1)
+    dbz_height <-replace(dbz_height, steiner != 2, 0.0)      #set non-convective pixels to zeros
+    dbz_height <- replace(dbz_height, is.na(dbz_height), 0.0)     #remove NAs
 
-#------- test code
-outNC <- create_outNC(ofile = "~/Desktop/test.nc", max_obs = 100)
-write_update(outNC, current_objects, obj_props, time[1])
-
-
-
-# now we need to take next image and repeat the above steps
-# here will be a loop
-frame1 <- frame2
-class1 <- class2
-frame2 <- clear_smallEchoes(labeled_echo[, , scan+2], min_size)
-pairs <- get_matchPairs(frame1, frame2)
-
-current_objects <- update_current_objects(frame1, current_objects)
-
-obj_props <- get_objectProp(frame1, class1)
-
-write_update(outNC, current_objects, obj_props, curr_time)
+    labeled_echo <- bwlabel(dbz_height)          #identify and label objects
+    conv_class <- get_vertical_class(dbz_height) #classifictaion
 
 
+
+
+
+
+
+    # label objects and remove single pixel echoes.
+    frame1 <-clear_smallEchoes(labeled_echo[, , scan], min_size)
+    frame2 <-clear_smallEchoes(labeled_echo[, , scan+1], min_size)
+    class1 <- conv_class[, , scan]
+    class2 <- conv_class[, , scan+1]
+
+    pairs <- get_matchPairs(frame1, frame2)
+
+    num_obj2 <- max(frame2)
+    obj_survival <- survival_stats(pairs, num_obj2)
+    current_objects <- init_uids(frame1, pairs) #initiate ids from 1
+    obj_props <- get_objectProp(frame1, class1)
+
+    #------- test code
+    outNC <- create_outNC(ofile = "~/Desktop/test.nc", max_obs = 100)
+    write_update(outNC, current_objects, obj_props, time[1])
+
+
+
+    # now we need to take next image and repeat the above steps
+    # here will be a loop
+    frame1 <- frame2
+    class1 <- class2
+    frame2 <- clear_smallEchoes(labeled_echo[, , scan+2], min_size)
+    pairs <- get_matchPairs(frame1, frame2)
+
+    current_objects <- update_current_objects(frame1, pairs, current_objects)
+
+    obj_props <- get_objectProp(frame1, class1)
+
+    write_update(outNC, current_objects, obj_props, curr_time)
+
+}
 
 #plot
 pdf(paste("object_label_", scan, ".png", sep=""), width=12, height=8)
