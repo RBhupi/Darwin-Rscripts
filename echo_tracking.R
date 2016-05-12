@@ -20,13 +20,9 @@ start_time <- proc.time()
 
 library(ncdf4)
 library(EBImage)  # for bwlabel,
-library(plot3D)
 library(spatstat) #for smoothing
 library(stringr)
-library(plyr)
-library(dplyr) #for bind_rows
 library(clue)  #solve_LSAP()
-library(lubridate)
 
 #----------------------------------------------------------------------fucntions
 #' Plots image with objects labels
@@ -416,14 +412,23 @@ create_outNC <- function(ofile, max_obs) {
     dim_obs <- ncdim_def("obs", vals = seq(max_obs), units="",
                          longname = "observation of a convective echo", create_dimvar = TRUE)
 
+    dim_time <- ncdim_def("time", vals=1, units = "seconds since 1970-01-01 00:00:00 UTC",
+                          longname = "time of the scan", unlim = TRUE, create_dimvar = TRUE)
+
+    dim_stat <- ncdim_def("stat", vals = seq(3), units="", longname = "1=lived, 2=died, 3=born")
+
+    ## Define Variables
+    var_survival <- ncvar_def("survival", units = "", longname = "survival stats for each scan",
+                              dim=list(dim_stat, dim_time), missval = -999, prec="integer")
+
     var_time <- ncvar_def("obs_time", units = "seconds since 1970-01-01 00:00:00 UTC",
                           dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
 
     var_xdist <- ncvar_def("x_dist", units = "Km", longname = "distance from Radar",
-                       dim = list(dim_obs, dim_echo), missval = -999.0, prec = "float")
+                           dim = list(dim_obs, dim_echo), missval = -999.0, prec = "float")
 
     var_ydist <- ncvar_def("y_dist", units = "Km", longname = "distance from Radar",
-                       dim = list(dim_obs, dim_echo), missval = -999.0, prec = "float")
+                           dim = list(dim_obs, dim_echo), missval = -999.0, prec = "float")
 
     var_x <- ncvar_def("x", units = "", longname = "index along x-coordinate",
                        dim = list(dim_obs, dim_echo), missval = -999.0, prec = "integer")
@@ -443,7 +448,9 @@ create_outNC <- function(ofile, max_obs) {
     var_nco <- ncvar_def("Co", units = "pixels", longname = "num of Cu overshooting pixels",
                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
 
-    var_list <- list(var_time, var_xdist, var_ydist, var_x, var_y, var_npix, var_ncg, var_ncb, var_nco)
+    var_list <- list(var_time, var_survival, var_xdist, var_ydist, var_x, var_y,
+                     var_npix, var_ncg, var_ncb, var_nco)
+
 
 
     outNC <- nc_create(filename = ofile, vars = var_list)
@@ -488,6 +495,18 @@ write_update<-function(outNC, current_objects, obj_props, obs_time){
     }
 
 }
+
+
+#' write survival stats to the file for each scan
+write_survival <- function(outNC, survival_stat, time, scan){
+    if(!is.atomic(survival_stat)){
+        survival_stat <- unlist(survival_stat, use.names = FALSE)
+    }
+
+    ncvar_put(outNC, varid = "survival", vals = survival_stat, start = c(1, scan), count = c(3, 1))
+    ncvar_put(outNC, varid = "time", vals = time, start = scan-1, count=1)
+}
+
 
 
 
@@ -563,13 +582,13 @@ get_objectProp <- function(image1, class1, xyDist){
 }
 
 
-
 #'attaches y and x distance from radar in km to object location indices
 attach_xyDist<-function(obj_props, xdist, ydist){
     obj_props$xdist <- xdist[obj_props$x]
     obj_props$ydist <- ydist[obj_props$y]
     invisible(obj_props)
 }
+
 
 #' returns a list with number of objects lived, died and born in this step.
 survival_stats <- function(pairs, num_obj2) {
@@ -579,23 +598,23 @@ survival_stats <- function(pairs, num_obj2) {
     obj_born <- num_obj2 - obj_lived
     return(list(lived=obj_lived, died=obj_died, born=obj_born))
 }
-
+#==============================================================================#
 
 #------------------- Settings for tracking method etc. ------------------------#
-search_margin <- 5 #pixels
-flow_margin <- 10 #pixels
-stdFlow_mag <- 3 #fft_flow will not be faster than this
-large_num <- 100000  #a very large number
-max_obs<- 100  #longest track that is likely to be recorded
-uid_counter <- 0 #start unique id with zero.
-min_size <- 2  #objects smaller than this will be filter
-newRain <- TRUE #is this new rainy scan after dry period?
+search_margin <- 5      #pixels
+flow_margin <- 10       #pixels
+stdFlow_mag <- 3        #fft_flow will not be faster than this
+large_num <- 100000     #a very large number
+max_obs<- 100           #longest track that is likely to be recorded
+uid_counter <- 0        #(a global variable) start unique id with zero.
+min_size <- 2           #objects smaller than this will be filter
 #==============================================================================#
 
 #----------------------------------------------------------------Calling Program
 setwd("~/data/darwin_radar/2d/")
 infile_name <- "./cpol_2D_0506.nc" #a file for a season
-outfile_name <- str_replace(infile_name, ".nc", "_tracks.nc")
+#outfile_name <- str_replace(infile_name, ".nc", "_tracks.nc")
+outfile_name <- "~/Desktop/test.nc"
 print(paste("Opening output file", basename(outfile_name)))
 outNC <- create_outNC(outfile_name, max_obs)
 
@@ -609,9 +628,13 @@ time <- change_baseEpoch(time, From_epoch = as.Date("2004-01-01"))
 
 
 
-nscans <- 144 #length(time)
+nscans <- 100 #length(time)
+newRain <- TRUE         #is this new rainy scan after dry period?
+
 print(paste("Total scans in this file", nscans))
 
+# We read the first frame and call it second frame so that in the loop,
+# this frame will be copied to frame1 and next frame will be frame2.
 frame2 <- get_filteredFrame(ncfile, 1, min_size)
 class2 <- get_classFrame(ncfile, 1) #classifictaion
 
@@ -620,32 +643,33 @@ for(scan in 2:nscans){
     class1 <- class2
 
     frame2 <- get_filteredFrame(ncfile, scan, min_size)
-    class2 <- get_classFrame(ncfile, scan) #classifictaion
+    class2 <- get_classFrame(ncfile, scan)
 
-    #skip if no echoes
+    #skip if no echoes in frame 1
     if(max(frame1)==0){         #if no echoes in frame1
         newRain = TRUE          #next rain will be newRain
+        write_survival(outNC, survival_stat = rep(0, 3),
+                       time = time[scan-1], scan = scan)
         next
     }
 
     pairs <- get_matchPairs(frame1, frame2)
+    obj_props <- get_objectProp(frame1, class1, list(x=x, y=y)) #of frame1
 
-    num_obj2 <- max(frame2)
-    obj_survival <- survival_stats(pairs, num_obj2)
-    obj_props <- get_objectProp(frame1, class1, list(x=x, y=y))
-
-
-
-    if(newRain){    #if this is newRain scan, init ids
+    if(newRain){                #if this is newRain scan, init ids
         current_objects <- init_uids(frame1, pairs) #initiate ids and return
         newRain <- FALSE
-    } else {        #else update old ids
+    } else {                    #else update old ids
         current_objects <- update_current_objects(frame1, pairs, current_objects)
     }
-    write_update(outNC, current_objects, obj_props, time[scan-1])
+    write_update(outNC, current_objects, obj_props, time[scan-1]) #for frame1
+
+    #Survival is from frame1 to frame2
+    num_obj2 <- max(frame2)
+    obj_survival <- survival_stats(pairs, num_obj2)
+    write_survival(outNC, survival_stat = obj_survival,
+                   time = time[scan-1], scan = scan)
 }
-
-
 
 
 print("closing files")
