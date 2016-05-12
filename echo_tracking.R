@@ -47,21 +47,21 @@ plot_objects_label<-function(labeled_image, xvalues, yvalues){
     }
 }
 
-#' returns a single radar scan with echo objects lebeled. smaller objects are removed.
+#' Returns a single radar scan with echo objects lebeled. smaller objects are removed.
 get_filteredFrame <- function(ncfile, scan_num, min_size) {
     echo_height <- get_convHeight(ncfile, scan_num)
     labeled_echo <- bwlabel(echo_height)          #label objects
     frame <-clear_smallEchoes(labeled_echo, min_size)
 }
 
-#' returns a single radar scan with echo objects lebeled. smaller objects are removed.
+#' Returns a single radar scan with echo objects lebeled. smaller objects are removed.
 get_classFrame <- function(ncfile, scan_num) {
     echo_height <- get_convHeight(ncfile, scan_num)
     get_vertical_class(echo_height)
 }
 
 
-#' reads height and classification data and replaces non-convective amd missing pixels with zero.
+#' Reads height and classification data and replaces non-convective amd missing pixels with zero.
 get_convHeight <- function(ncfile, scan) {
     dbz_height <- ncvar_get(ncfile, varid = "zero_dbz_cont", start = c(1, 1, scan), count = c(-1, -1, 1))
     steiner <- ncvar_get(ncfile, varid = "steiner_class", start = c(1, 1, scan), count = c(-1, -1, 1))
@@ -83,7 +83,7 @@ clear_smallEchoes <- function(label_image, min_size) {
     invisible(label_image)
 }
 
-#' returns vertical classification Cg=1, Cb=2, Co=3
+#' Returns vertical classification Cg=1, Cb=2, Co=3
 get_vertical_class <- function(conv_height) {
     #min max scan levels for classification
     min_level <- c(5, 15, 31)
@@ -97,7 +97,7 @@ get_vertical_class <- function(conv_height) {
 }
 
 
-#' change base epoch of. Default To_epoch is "1970-01-01.
+#' Changes base epoch of. Default To_epoch is "1970-01-01.
 change_baseEpoch <- function(time_seconds, From_epoch, To_epoch=as.Date("1970-01-01")){
     epoch_diff <- as.integer(From_epoch-To_epoch)
     epoch_diff_seconds <- epoch_diff * 86400 #seconds in a day
@@ -106,7 +106,8 @@ change_baseEpoch <- function(time_seconds, From_epoch, To_epoch=as.Date("1970-01
 }
 
 
-#' given two images, it identifies the matching objects and pair them appropriatly.
+#' Given two images, the function identifies the matching
+#' objects and pair them appropriatly.
 get_matchPairs <- function(image1, image2) {
     nObjects1 <- max(image1) #objects in first image
     nObjects2 <- max(image2) #objects in second image
@@ -123,7 +124,7 @@ get_matchPairs <- function(image1, image2) {
     return(as.vector(pairs))
 }
 
-#' function matches objects into pairs, also removes bad pairs.
+#' Matches objects into pairs and removes bad matching.
 match_pairs <- function(obj_match) {
     pairs <- solve_LSAP(obj_match)
     pairs <- as.vector(pairs)
@@ -137,7 +138,7 @@ match_pairs <- function(obj_match) {
 }
 
 
-#' Function matches all the obejects in image 1 to objects in image 2
+#' Matches all the obejects in image1 to the objects in image 2
 locate_allObjects <- function(image1, image2) {
     nObjects1 <- max(image1) #objects in first image
     nObjects2 <- max(image2) #objects in second image
@@ -170,7 +171,7 @@ locate_allObjects <- function(image1, image2) {
 
 
 
-#' Takes in a labeled image and finds the redius and the center of the given object.
+#' Takes in a labeled image and finds the radius and the center of the given object.
 get_objExtent <- function(labeled_image, obj_label) {
     #center indices of the object assuming it is a rectangle
     obj_index <- which(labeled_image==obj_label, arr.ind = TRUE)
@@ -238,7 +239,7 @@ fft_flowVectors <- function (im1, im2) {
 }
 
 
-#' computs cross-covariance using FFT, returns shifted covariance image
+#' Computes cross-covariance using FFT, returns shifted covariance image
 fft_crossCov <- function (img1, img2) {
     fft1_conj <- Conj(fft(img1)) #complex conjugate
     fft2 <- fft(img2)
@@ -363,7 +364,7 @@ save_objMatch <- function(obj_id1, obj_found, discrepancy, obj_match) {
 }
 
 
-#' computes discrepancy for a single object. Check how it is computed.
+#' Computes discrepancy for a single object. Check how it is computed.
 #' This parameter has most effect on the acccuracy of tracks.
 get_discrepancy <- function(obj_found, image2, search_box, obj1_extent) {
     dist_pred <- c(NULL)
@@ -388,7 +389,7 @@ euclidean_dist <- function(vec1, vec2){
     sqrt(sum((vec1-vec2)^2))
 }
 
-#' Retuns ratio (>=1) of bigger number to smaller number when given two number.
+#' Returns ratio (>=1) of bigger number to smaller number when given two number.
 get_ratio<-function(x, y){
     if(x>=y)
         return(x/y)
@@ -398,7 +399,7 @@ get_ratio<-function(x, y){
 
 
 
-#' creates output netcdf file for radar echo tracjecories.
+#' Creates output netcdf file for radar echo tracjecories.
 create_outNC <- function(ofile, max_obs) {
     if(file.exists(ofile)){
         print(paste("removing existing file", basename(ofile)))
@@ -473,7 +474,7 @@ create_outNC <- function(ofile, max_obs) {
     invisible(outNC)
 }
 
-#' Function writes properties and uids for all objects.
+#' Writes properties and uids for all objects.
 write_update<-function(outNC, current_objects, obj_props, obs_time){
     nobj <- length(current_objects$id1)
 
@@ -497,7 +498,7 @@ write_update<-function(outNC, current_objects, obj_props, obs_time){
 }
 
 
-#' write survival stats to the file for each scan
+#' Write survival stats to the file for each scan
 write_survival <- function(outNC, survival_stat, time, scan){
     if(!is.atomic(survival_stat)){
         survival_stat <- unlist(survival_stat, use.names = FALSE)
@@ -510,7 +511,7 @@ write_survival <- function(outNC, survival_stat, time, scan){
 
 
 
-#' returns a dataframe for objects with ids in frame1 and frame2 and uids (same as ids for first frame).
+#' Returns a dataframe for objects with ids in frame1 and frame2 and uids (same as ids for first frame).
 init_uids <- function(first_frame, pairs){
     nobj <- max(first_frame) #number of objects in frame1
     objects_mat <- matrix(data = NA, ncol = 4, nrow = nobj)
@@ -525,7 +526,7 @@ init_uids <- function(first_frame, pairs){
 }
 
 
-#' removes dead objects, updates living objects and assign new uids to new born objects.
+#' Removes dead objects, updates living objects and assign new uids to new born objects.
 #' Also, updates number of observations for each echo.
 update_current_objects <- function(frame1, pairs, current_objects){
     nobj <- max(frame1)
@@ -551,14 +552,14 @@ update_current_objects <- function(frame1, pairs, current_objects){
 }
 
 
-#' Retuns sequence of next unique ids and increament the uid_counter.
+#' Returns sequence of next unique ids and increament the uid_counter.
 next_uid<-function(count=1){
     this_uid <- uid_counter + 1:count
     uid_counter <<- uid_counter + count
     return(this_uid)
 }
 
-#' return object's size, location and classification info, xyDist should be a list
+#' Return object's size, location and classification info, xyDist should be a list
 get_objectProp <- function(image1, class1, xyDist){
     objprop <- c(NULL)
     nobj <- max(image1)
@@ -582,7 +583,7 @@ get_objectProp <- function(image1, class1, xyDist){
 }
 
 
-#'attaches y and x distance from radar in km to object location indices
+#' Attaches y and x distance from radar in km to object location indices
 attach_xyDist<-function(obj_props, xdist, ydist){
     obj_props$xdist <- xdist[obj_props$x]
     obj_props$ydist <- ydist[obj_props$y]
@@ -590,7 +591,7 @@ attach_xyDist<-function(obj_props, xdist, ydist){
 }
 
 
-#' returns a list with number of objects lived, died and born in this step.
+#' Returns a list with number of objects lived, died and born in this step.
 survival_stats <- function(pairs, num_obj2) {
     pairs_vec <- as.vector(pairs)
     obj_lived <- length(pairs_vec[pairs_vec>0])
@@ -613,8 +614,8 @@ min_size <- 2           #objects smaller than this will be filter
 #----------------------------------------------------------------Calling Program
 setwd("~/data/darwin_radar/2d/")
 infile_name <- "./cpol_2D_0506.nc" #a file for a season
-#outfile_name <- str_replace(infile_name, ".nc", "_tracks.nc")
-outfile_name <- "~/Desktop/test.nc"
+outfile_name <- str_replace(infile_name, ".nc", "_tracks.nc")
+#outfile_name <- "~/Desktop/test.nc"
 print(paste("Opening output file", basename(outfile_name)))
 outNC <- create_outNC(outfile_name, max_obs)
 
@@ -628,10 +629,11 @@ time <- change_baseEpoch(time, From_epoch = as.Date("2004-01-01"))
 
 
 
-nscans <- 100 #length(time)
+nscans <- length(time)
 newRain <- TRUE         #is this new rainy scan after dry period?
 
 print(paste("Total scans in this file", nscans))
+pb = txtProgressBar(min =2, max = nscans, initial = 2, style = 3) #progress bar
 
 # We read the first frame and call it second frame so that in the loop,
 # this frame will be copied to frame1 and next frame will be frame2.
@@ -639,6 +641,8 @@ frame2 <- get_filteredFrame(ncfile, 1, min_size)
 class2 <- get_classFrame(ncfile, 1) #classifictaion
 
 for(scan in 2:nscans){
+    setTxtProgressBar(pb, scan) #progress bar
+
     frame1 <- frame2
     class1 <- class2
 
@@ -670,7 +674,7 @@ for(scan in 2:nscans){
     write_survival(outNC, survival_stat = obj_survival,
                    time = time[scan-1], scan = scan)
 }
-
+cat("\n") #new line required for progress bar
 
 print("closing files")
 nc_close(ncfile)
