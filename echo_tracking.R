@@ -26,6 +26,7 @@ library(stringr)
 library(plyr)
 library(dplyr) #for bind_rows
 library(clue)  #solve_LSAP()
+library(lubridate)
 
 #----------------------------------------------------------------------fucntions
 #' Plots image with objects labels
@@ -97,6 +98,15 @@ get_vertical_class <- function(conv_height) {
                                    conv_height<= max_level[i], i)
     }
     return(conv_height) #classified
+}
+
+
+#' change base epoch of. Default To_epoch is "1970-01-01.
+change_baseEpoch <- function(time_seconds, From_epoch, To_epoch=as.Date("1970-01-01")){
+    epoch_diff <- as.integer(From_epoch-To_epoch)
+    epoch_diff_seconds <- epoch_diff * 86400 #seconds in a day
+    time_newEpoch <- time_seconds + epoch_diff_seconds
+    return(time_newEpoch)
 }
 
 
@@ -594,8 +604,11 @@ ncfile <- nc_open(infile_name)
 x <- ncvar_get(ncfile, varid = "x")
 y <- ncvar_get(ncfile, varid = "y")
 
-
 time <- ncvar_get(ncfile, varid="time")
+time <- change_baseEpoch(time, From_epoch = as.Date("2004-01-01"))
+
+
+
 nscans <- 144 #length(time)
 print(paste("Total scans in this file", nscans))
 
@@ -629,9 +642,10 @@ for(scan in 2:nscans){
     } else {        #else update old ids
         current_objects <- update_current_objects(frame1, pairs, current_objects)
     }
-
-    write_update(outNC, current_objects, obj_props, time[1])
+    write_update(outNC, current_objects, obj_props, time[scan-1])
 }
+
+
 
 
 print("closing files")
