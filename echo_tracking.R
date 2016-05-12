@@ -409,11 +409,17 @@ create_outNC <- function(ofile, max_obs) {
     var_time <- ncvar_def("obs_time", units = "seconds since 1970-01-01 00:00:00 UTC",
                           dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
 
-    var_x <- ncvar_def("x", units = "Km", longname = "distance from Radar",
+    var_xdist <- ncvar_def("x_dist", units = "Km", longname = "distance from Radar",
                        dim = list(dim_obs, dim_echo), missval = -999.0, prec = "float")
 
-    var_y <- ncvar_def("y", units = "Km", longname = "distance from Radar",
+    var_ydist <- ncvar_def("y_dist", units = "Km", longname = "distance from Radar",
                        dim = list(dim_obs, dim_echo), missval = -999.0, prec = "float")
+
+    var_x <- ncvar_def("x", units = "", longname = "index along x-coordinate",
+                       dim = list(dim_obs, dim_echo), missval = -999.0, prec = "integer")
+
+    var_y <- ncvar_def("y", units = "", longname = "index along y-coordinate",
+                       dim = list(dim_obs, dim_echo), missval = -999.0, prec = "integer")
 
     var_npix <- ncvar_def("area", units = "pixels", longname = "area of the echo in pixels",
                           dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
@@ -427,7 +433,7 @@ create_outNC <- function(ofile, max_obs) {
     var_nco <- ncvar_def("Co", units = "pixels", longname = "num of Cu overshooting pixels",
                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
 
-    var_list <- list(var_time, var_x, var_y, var_npix, var_ncg, var_ncb, var_nco)
+    var_list <- list(var_time, var_xdist, var_ydist, var_x, var_y, var_npix, var_ncg, var_ncb, var_nco)
 
 
     outNC <- nc_create(filename = ofile, vars = var_list)
@@ -461,6 +467,9 @@ write_update<-function(outNC, current_objects, obj_props, obs_time){
         ncvar_put(outNC, varid = "obs_time", obs_time, start = nc_start, count = nc_count)
         ncvar_put(outNC, varid = "x", obj_props$x[object], start = nc_start, count = nc_count)
         ncvar_put(outNC, varid = "y", obj_props$y[object], start = nc_start, count = nc_count)
+        ncvar_put(outNC, varid = "x_dist", obj_props$xdist[object], start = nc_start, count = nc_count)
+        ncvar_put(outNC, varid = "y_dist", obj_props$ydist[object], start = nc_start, count = nc_count)
+
         ncvar_put(outNC, varid = "area", obj_props$area[object],  start = nc_start, count = nc_count)
 
         ncvar_put(outNC, varid = "Cg", obj_props$Cg[object], start = nc_start, count = nc_count)
@@ -520,16 +529,16 @@ next_uid<-function(count=1){
     return(this_uid)
 }
 
-#' return object's size, location and classification info
-get_objectProp <- function(image1, class1){
+#' return object's size, location and classification info, xyDist should be a list
+get_objectProp <- function(image1, class1, xyDist){
     objprop <- c(NULL)
     nobj <- max(image1)
 
     for(obj in seq(nobj)){
         obj_index <- which(image1==obj, arr.ind = TRUE)
         objprop$id1 <- append (objprop$id1, obj)  #id in frame1
-        objprop$x <- append(objprop$x, median(obj_index[, 2])) #center column
-        objprop$y <- append(objprop$y, median(obj_index[, 1])) #center row
+        objprop$x <- append(objprop$x, floor(median(obj_index[, 2]))) #center column
+        objprop$y <- append(objprop$y, floor(median(obj_index[, 1]))) #center row
         objprop$area <- append(objprop$area, length(obj_index[, 1]))
 
         obj_class <- class1[image1==obj] #class of convection for the object
@@ -539,9 +548,18 @@ get_objectProp <- function(image1, class1){
         objprop$Co <- append(objprop$Co, length(obj_class[obj_class==3]))
     }
 
+    objprop <- attach_xyDist(objprop, xyDist$x, xyDist$y)
     invisible(objprop)
 }
 
+
+
+#'attaches y and x distance from radar in km to object location indices
+attach_xyDist<-function(obj_props, xdist, ydist){
+    obj_props$xdist <- xdist[obj_props$x]
+    obj_props$ydist <- ydist[obj_props$y]
+    invisible(obj_props)
+}
 
 #' returns a list with number of objects lived, died and born in this step.
 survival_stats <- function(pairs, num_obj2) {
@@ -567,15 +585,19 @@ newRain <- TRUE #is this new rainy scan after dry period?
 #----------------------------------------------------------------Calling Program
 setwd("~/data/darwin_radar/2d/")
 infile_name <- "./cpol_2D_0506.nc" #a file for a season
-
-outNC <- create_outNC(ofile = "~/Desktop/test.nc", max_obs = 100)
+outfile_name <- str_replace(infile_name, ".nc", "_tracks.nc")
+print(paste("Opening output file", basename(outfile_name)))
+outNC <- create_outNC(outfile_name, max_obs)
 
 #read x, y and time from the file
 ncfile <- nc_open(infile_name)
 x <- ncvar_get(ncfile, varid = "x")
 y <- ncvar_get(ncfile, varid = "y")
+
+
 time <- ncvar_get(ncfile, varid="time")
 nscans <- 144 #length(time)
+print(paste("Total scans in this file", nscans))
 
 frame2 <- get_filteredFrame(ncfile, 1, min_size)
 class2 <- get_classFrame(ncfile, 1) #classifictaion
@@ -597,7 +619,9 @@ for(scan in 2:nscans){
 
     num_obj2 <- max(frame2)
     obj_survival <- survival_stats(pairs, num_obj2)
-    obj_props <- get_objectProp(frame1, class1)
+    obj_props <- get_objectProp(frame1, class1, list(x=x, y=y))
+
+
 
     if(newRain){    #if this is newRain scan, init ids
         current_objects <- init_uids(frame1, pairs) #initiate ids and return
@@ -609,10 +633,13 @@ for(scan in 2:nscans){
     write_update(outNC, current_objects, obj_props, time[1])
 }
 
-nc_close(ncfile)
 
+print("closing files")
+nc_close(ncfile)
+#write unlimited dim and close
 ncvar_put(outNC, varid = "conv_echo", vals = seq(uid_counter), start = 1, count = uid_counter)
 nc_close(outNC)
 
-# Stop the clock
-print(proc.time() - start_time)
+# Stop the clock and print the time elapsed
+time_elapsed <- (proc.time() - start_time)
+print(paste("time elapsed", round(time_elapsed[3]/60), "minutes"))
