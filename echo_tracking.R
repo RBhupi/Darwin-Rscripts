@@ -404,7 +404,7 @@ create_outNC <- function(ofile, max_obs) {
         print(paste("removing existing file", basename(ofile)))
         file.remove(ofile)
     }
-
+    deflat <- 7
 
     dim_echo <- ncdim_def("conv_echo", vals=1, units = "", unlim = TRUE,
                           longname = "unique id of convective echo", create_dimvar = TRUE)
@@ -427,28 +427,28 @@ create_outNC <- function(ofile, max_obs) {
     var_time <- ncvar_def("obs_time", units = "seconds since 1970-01-01 00:00:00 UTC",
                           dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
 
-    var_xdist <- ncvar_def("x_dist", units = "Km", longname = "distance from Radar",
+    var_xdist <- ncvar_def("x_dist", units = "Km", longname = "distance from Radar", compression = deflat,
                            dim = list(dim_obs, dim_echo), missval = -999.0, prec = "float")
 
-    var_ydist <- ncvar_def("y_dist", units = "Km", longname = "distance from Radar",
+    var_ydist <- ncvar_def("y_dist", units = "Km", longname = "distance from Radar", compression = deflat,
                            dim = list(dim_obs, dim_echo), missval = -999.0, prec = "float")
 
-    var_x <- ncvar_def("x", units = "", longname = "index along x-coordinate",
+    var_x <- ncvar_def("x", units = "", longname = "index along x-coordinate", compression = deflat,
                        dim = list(dim_obs, dim_echo), missval = -999.0, prec = "integer")
 
-    var_y <- ncvar_def("y", units = "", longname = "index along y-coordinate",
+    var_y <- ncvar_def("y", units = "", longname = "index along y-coordinate", compression = deflat,
                        dim = list(dim_obs, dim_echo), missval = -999.0, prec = "integer")
 
-    var_npix <- ncvar_def("area", units = "pixels", longname = "area of the echo in pixels",
+    var_npix <- ncvar_def("area", units = "pixels", longname = "area of the echo in pixels",  compression = deflat,
                           dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
 
-    var_ncg <- ncvar_def("Cg", units = "pixels", longname = "num of Cu Congestus pixels",
+    var_ncg <- ncvar_def("Cg", units = "pixels", longname = "num of Cu Congestus pixels",  compression = deflat,
                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
 
-    var_ncb <- ncvar_def("Cb", units = "pixels", longname = "num of Cumulonimbus pixels",
+    var_ncb <- ncvar_def("Cb", units = "pixels", longname = "num of Cumulonimbus pixels",  compression = deflat,
                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
 
-    var_nco <- ncvar_def("Co", units = "pixels", longname = "num of Cu overshooting pixels",
+    var_nco <- ncvar_def("Co", units = "pixels", longname = "num of Cu overshooting pixels",  compression = deflat,
                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
 
     var_list <- list(var_time, var_survival, var_dur, var_xdist, var_ydist,
@@ -553,7 +553,7 @@ update_current_objects <- function(frame1, pairs, old_objects){
         if(obj %in% old_objects$id2){ # but same was id2 in the last step
             # so they should get same uid as last time
             objects_mat[obj, 2] <- old_objects$uid[old_objects$id2==obj]
-            objects_mat[obj, 4] <- old_objects$obs_num[old_objects$id2==obj]+1
+            objects_mat[obj, 4] <- old_objects$obs_num[old_objects$id2==obj] + 1
         } else {
             objects_mat[obj, 2] <- next_uid()
             objects_mat[obj, 4] <- 1 #first observation of the echo
@@ -657,14 +657,18 @@ pb = txtProgressBar(min =2, max = nscans, initial = 2, style = 3) #progress bar
 frame2 <- get_filteredFrame(ncfile, 1, min_size)
 class2 <- get_classFrame(ncfile, 1) #classifictaion
 
-for(scan in 2:100){
+for(scan in 2:nscans){
     setTxtProgressBar(pb, scan) #progress bar
 
     frame1 <- frame2
     class1 <- class2
-
     frame2 <- get_filteredFrame(ncfile, scan, min_size)
     class2 <- get_classFrame(ncfile, scan)
+
+    if(scan==nscans){ #if this is the last scan make it zero.
+        frame2 <- replace(frame2, frame2>0, 0)
+    }
+
 
     #skip if no echoes in frame 1
     if(max(frame1)==0){         #if no echoes in frame1
@@ -691,6 +695,8 @@ for(scan in 2:100){
     write_survival(outNC, survival_stat = obj_survival,
                    time = time[scan-1], scan = scan)
 }
+
+
 cat("\n") #new line required for progress bar
 
 print("closing files")
