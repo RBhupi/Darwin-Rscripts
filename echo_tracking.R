@@ -398,8 +398,7 @@ get_ratio<-function(x, y){
 }
 
 
-
-#' Creates output netcdf file for radar echo tracjecories.
+#' Creates output netcdf file for radar echo tracjecories. This is the longest function.
 create_outNC <- function(ofile, max_obs) {
     if(file.exists(ofile)){
         print(paste("removing existing file", basename(ofile)))
@@ -421,6 +420,9 @@ create_outNC <- function(ofile, max_obs) {
     ## Define Variables
     var_survival <- ncvar_def("survival", units = "", longname = "survival stats for each scan",
                               dim=list(dim_stat, dim_time), missval = -999, prec="integer")
+
+    var_dur <- ncvar_def("duration", units = "", longname = "duration of echo in time-steps",
+                              dim=dim_echo, missval = -999, prec="integer")
 
     var_time <- ncvar_def("obs_time", units = "seconds since 1970-01-01 00:00:00 UTC",
                           dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
@@ -449,8 +451,8 @@ create_outNC <- function(ofile, max_obs) {
     var_nco <- ncvar_def("Co", units = "pixels", longname = "num of Cu overshooting pixels",
                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
 
-    var_list <- list(var_time, var_survival, var_xdist, var_ydist, var_x, var_y,
-                     var_npix, var_ncg, var_ncb, var_nco)
+    var_list <- list(var_time, var_survival, var_dur, var_xdist, var_ydist,
+                     var_x, var_y, var_npix, var_ncg, var_ncb, var_nco)
 
 
 
@@ -495,6 +497,21 @@ write_update<-function(outNC, current_objects, obj_props, obs_time){
         ncvar_put(outNC, varid = "Co", obj_props$Co[object], start = nc_start, count = nc_count)
     }
 
+    write_duration(outNC, current_objects)
+
+}
+
+
+#' Writes number of observations for dead objects.
+write_duration <- function(outNC, current_objects){
+    nobj <- length(current_objects$id1)
+
+    for (obj in seq(nobj)){
+        if(current_objects$id2[obj]==0){
+            ncvar_put(outNC, varid = "duration", current_objects$obs_num[obj],
+                      start=current_objects$uid[obj], count=1)
+        }
+    }
 }
 
 
@@ -507,8 +524,6 @@ write_survival <- function(outNC, survival_stat, time, scan){
     ncvar_put(outNC, varid = "survival", vals = survival_stat, start = c(1, scan), count = c(3, 1))
     ncvar_put(outNC, varid = "time", vals = time, start = scan-1, count=1)
 }
-
-
 
 
 #' Returns a dataframe for objects with ids in frame1 and frame2 and uids (same as ids for first frame).
@@ -527,24 +542,25 @@ init_uids <- function(first_frame, pairs){
 
 
 #' Removes dead objects, updates living objects and assign new uids to new born objects.
-#' Also, updates number of observations for each echo.
-update_current_objects <- function(frame1, pairs, current_objects){
+#' Also, updates number of observations for each echo. This is a complecated function :-\.
+update_current_objects <- function(frame1, pairs, old_objects){
     nobj <- max(frame1)
     objects_mat <- matrix(data = NA, ncol = 4, nrow = nobj)
 
-    objects_mat[, 1] <- seq(nobj) #this is id1
+    objects_mat[, 1] <- seq(nobj) # this is id1 at current step
 
     for (obj in seq(nobj)){
-        if(obj %in% current_objects$id2){
-            objects_mat[obj, 2] <- current_objects$uid[current_objects$id2==obj]
-            objects_mat[obj, 4] <- current_objects$obs_num[current_objects$id2==obj]+1
+        if(obj %in% old_objects$id2){ # but same was id2 in the last step
+            # so they should get same uid as last time
+            objects_mat[obj, 2] <- old_objects$uid[old_objects$id2==obj]
+            objects_mat[obj, 4] <- old_objects$obs_num[old_objects$id2==obj]+1
         } else {
             objects_mat[obj, 2] <- next_uid()
             objects_mat[obj, 4] <- 1 #first observation of the echo
         }
     }
 
-    objects_mat[, 3] <- as.vector(pairs) #as they are in frame2
+    objects_mat[, 3] <- as.vector(pairs) #match as they are in frame2
 
     current_objects <- data.frame(objects_mat, row.names = NULL)
     colnames(current_objects) <- c("id1", "uid", "id2", "obs_num")
@@ -614,22 +630,23 @@ min_size <- 2           #objects smaller than this will be filter
 #----------------------------------------------------------------Calling Program
 setwd("~/data/darwin_radar/2d/")
 infile_name <- "./cpol_2D_0506.nc" #a file for a season
-outfile_name <- str_replace(infile_name, ".nc", "_tracks.nc")
-#outfile_name <- "~/Desktop/test.nc"
+#outfile_name <- str_replace(infile_name, ".nc", "_tracks.nc")
+outfile_name <- "~/Desktop/test.nc"
 print(paste("Opening output file", basename(outfile_name)))
 outNC <- create_outNC(outfile_name, max_obs)
+
 
 #read x, y and time from the file
 ncfile <- nc_open(infile_name)
 x <- ncvar_get(ncfile, varid = "x")
 y <- ncvar_get(ncfile, varid = "y")
 
+
 time <- ncvar_get(ncfile, varid="time")
 time <- change_baseEpoch(time, From_epoch = as.Date("2004-01-01"))
 
 
-
-nscans <- length(time)
+nscans <- 100 #length(time)
 newRain <- TRUE         #is this new rainy scan after dry period?
 
 print(paste("Total scans in this file", nscans))
@@ -640,7 +657,7 @@ pb = txtProgressBar(min =2, max = nscans, initial = 2, style = 3) #progress bar
 frame2 <- get_filteredFrame(ncfile, 1, min_size)
 class2 <- get_classFrame(ncfile, 1) #classifictaion
 
-for(scan in 2:nscans){
+for(scan in 2:100){
     setTxtProgressBar(pb, scan) #progress bar
 
     frame1 <- frame2
