@@ -404,62 +404,74 @@ create_outNC <- function(ofile, max_obs) {
         print(paste("removing existing file", basename(ofile)))
         file.remove(ofile)
     }
-    deflat <- 7
+    deflat <- 9
 
-    dim_echo <- ncdim_def("conv_echo", vals=1, units = "", unlim = TRUE,
+    dim_echo <- ncdim_def("echo_id", vals=1, units = "", unlim = TRUE,
                           longname = "unique id of convective echo", create_dimvar = TRUE)
 
-    dim_obs <- ncdim_def("obs", vals = seq(max_obs), units="",
-                         longname = "observation of a convective echo", create_dimvar = TRUE)
+    dim_obs <- ncdim_def("records", vals = seq(max_obs), units="",
+                         longname = "observation records")
 
     dim_time <- ncdim_def("time", vals=1, units = "seconds since 1970-01-01 00:00:00 UTC",
                           longname = "time of the scan", unlim = TRUE, create_dimvar = TRUE)
 
-    dim_stat <- ncdim_def("stat", vals = seq(3), units="", longname = "1=lived, 2=died, 3=born")
+    dim_stat <- ncdim_def("stat", vals = seq(3), units="", longname = "survival stats; lived, died, born")
 
     ## Define Variables
     var_survival <- ncvar_def("survival", units = "", longname = "survival stats for each scan",
-                              dim=list(dim_stat, dim_time), missval = -999, prec="integer")
+                              dim=list(dim_stat, dim_time), missval = -999, prec="integer",
+                              compression = deflat, shuffle = TRUE)
 
     var_dur <- ncvar_def("duration", units = "", longname = "duration of echo in time-steps",
-                              dim=dim_echo, missval = -999, prec="integer")
+                              dim=dim_echo, missval = -999, prec="integer",
+                         compression = deflat, shuffle = TRUE)
 
-    var_time <- ncvar_def("obs_time", units = "seconds since 1970-01-01 00:00:00 UTC",
-                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
+    var_time <- ncvar_def("record_time", units = "seconds since 1970-01-01 00:00:00 UTC",
+                          longname = "time of the scan for each record",
+                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer",
+                          compression = deflat, shuffle = TRUE)
 
-    var_xdist <- ncvar_def("x_dist", units = "Km", longname = "distance from Radar", compression = deflat,
-                           dim = list(dim_obs, dim_echo), missval = -999.0, prec = "float")
+    var_xdist <- ncvar_def("x_dist", units = "Km", longname = "distance from Radar",
+                           dim = list(dim_obs, dim_echo), missval = -999.0, prec = "float",
+                           compression = deflat)
 
-    var_ydist <- ncvar_def("y_dist", units = "Km", longname = "distance from Radar", compression = deflat,
-                           dim = list(dim_obs, dim_echo), missval = -999.0, prec = "float")
+    var_ydist <- ncvar_def("y_dist", units = "Km", longname = "distance from Radar",
+                           dim = list(dim_obs, dim_echo), missval = -999.0, prec = "float",
+                           compression = deflat)
 
-    var_x <- ncvar_def("x", units = "", longname = "index along x-coordinate", compression = deflat,
-                       dim = list(dim_obs, dim_echo), missval = -999.0, prec = "integer")
 
-    var_y <- ncvar_def("y", units = "", longname = "index along y-coordinate", compression = deflat,
-                       dim = list(dim_obs, dim_echo), missval = -999.0, prec = "integer")
+    var_x <- ncvar_def("x", units = "", longname = "index along x-coordinate",
+                       dim = list(dim_obs, dim_echo), missval = -999, prec = "integer",
+                       compression = deflat, shuffle = TRUE)
 
-    var_npix <- ncvar_def("area", units = "pixels", longname = "area of the echo in pixels",  compression = deflat,
-                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
+    var_y <- ncvar_def("y", units = "", longname = "index along y-coordinate",
+                       dim = list(dim_obs, dim_echo), missval = -999, prec = "integer",
+                       compression = deflat, shuffle = TRUE)
 
-    var_ncg <- ncvar_def("Cg", units = "pixels", longname = "num of Cu Congestus pixels",  compression = deflat,
-                         dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
+    var_npix <- ncvar_def("area", units = "pixels", longname = "area of the echo in pixels",
+                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer",
+                          compression = deflat, shuffle = TRUE)
 
-    var_ncb <- ncvar_def("Cb", units = "pixels", longname = "num of Cumulonimbus pixels",  compression = deflat,
-                         dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
+    var_ncg <- ncvar_def("Cg", units = "pixels", longname = "num of Cu Congestus pixels",
+                         dim = list(dim_obs, dim_echo), missval = -999, prec = "integer",
+                         compression = deflat, shuffle = TRUE)
 
-    var_nco <- ncvar_def("Co", units = "pixels", longname = "num of Cu overshooting pixels",  compression = deflat,
-                         dim = list(dim_obs, dim_echo), missval = -999, prec = "integer")
+    var_ncb <- ncvar_def("Cb", units = "pixels", longname = "num of Cumulonimbus pixels",
+                         dim = list(dim_obs, dim_echo), missval = -999, prec = "integer",
+                         compression = deflat, shuffle = TRUE)
+
+    var_nco <- ncvar_def("Co", units = "pixels", longname = "num of Cu overshooting pixels",
+                         dim = list(dim_obs, dim_echo), missval = -999, prec = "integer",
+                         compression = deflat, shuffle = TRUE)
 
     var_list <- list(var_time, var_survival, var_dur, var_xdist, var_ydist,
                      var_x, var_y, var_npix, var_ncg, var_ncb, var_nco)
 
 
-
     outNC <- nc_create(filename = ofile, vars = var_list)
 
     #for CF standards
-    ncatt_put(outNC, varid = "conv_echo", attname = "cf_role", attval = "trajectory_id")
+    ncatt_put(outNC, varid = "echo_id", attname = "cf_role", attval = "trajectory_id")
     ncatt_put(outNC, varid = 0, attname = "featureType", attval = "trajectory")
 
     description <- paste("The CPOL radar echoes of convective types were separated using Steiner classification scheme and tracked.")
@@ -484,7 +496,7 @@ write_update<-function(outNC, current_objects, obj_props, obs_time){
         nc_start <- c(current_objects$obs_num[object], current_objects$uid[object])
         nc_count <- c(1, 1)
 
-        ncvar_put(outNC, varid = "obs_time", obs_time, start = nc_start, count = nc_count)
+        ncvar_put(outNC, varid = "record_time", obs_time, start = nc_start, count = nc_count)
         ncvar_put(outNC, varid = "x", obj_props$x[object], start = nc_start, count = nc_count)
         ncvar_put(outNC, varid = "y", obj_props$y[object], start = nc_start, count = nc_count)
         ncvar_put(outNC, varid = "x_dist", obj_props$xdist[object], start = nc_start, count = nc_count)
@@ -498,7 +510,6 @@ write_update<-function(outNC, current_objects, obj_props, obs_time){
     }
 
     write_duration(outNC, current_objects)
-
 }
 
 
@@ -593,7 +604,6 @@ get_objectProp <- function(image1, class1, xyDist){
         objprop$Cb <- append(objprop$Cb, length(obj_class[obj_class==2]))
         objprop$Co <- append(objprop$Co, length(obj_class[obj_class==3]))
     }
-
     objprop <- attach_xyDist(objprop, xyDist$x, xyDist$y)
     invisible(objprop)
 }
@@ -630,8 +640,8 @@ min_size <- 2           #objects smaller than this will be filter
 #----------------------------------------------------------------Calling Program
 setwd("~/data/darwin_radar/2d/")
 infile_name <- "./cpol_2D_0506.nc" #a file for a season
-#outfile_name <- str_replace(infile_name, ".nc", "_tracks.nc")
-outfile_name <- "~/Desktop/test.nc"
+outfile_name <- str_replace(infile_name, ".nc", "_tracks.nc")
+#outfile_name <- "~/Desktop/test.nc"
 print(paste("Opening output file", basename(outfile_name)))
 outNC <- create_outNC(outfile_name, max_obs)
 
@@ -646,7 +656,7 @@ time <- ncvar_get(ncfile, varid="time")
 time <- change_baseEpoch(time, From_epoch = as.Date("2004-01-01"))
 
 
-nscans <- 100 #length(time)
+nscans <- length(time)
 newRain <- TRUE         #is this new rainy scan after dry period?
 
 print(paste("Total scans in this file", nscans))
@@ -702,7 +712,7 @@ cat("\n") #new line required for progress bar
 print("closing files")
 nc_close(ncfile)
 #write unlimited dim and close
-ncvar_put(outNC, varid = "conv_echo", vals = seq(uid_counter), start = 1, count = uid_counter)
+ncvar_put(outNC, varid = "echo_id", vals = seq(uid_counter), start = 1, count = uid_counter)
 nc_close(outNC)
 
 # Stop the clock and print the time elapsed
