@@ -108,7 +108,7 @@ change_baseEpoch <- function(time_seconds, From_epoch, To_epoch=as.Date("1970-01
 
 #' Given two images, the function identifies the matching
 #' objects and pair them appropriatly.
-get_matchPairs <- function(image1, image2) {
+get_matchPairs <- function(image1, image2, class2) {
     nObjects1 <- max(image1) #objects in first image
     nObjects2 <- max(image2) #objects in second image
 
@@ -119,7 +119,7 @@ get_matchPairs <- function(image1, image2) {
         return(zero_pairs)
     }
 
-    obj_match <- locate_allObjects(image1, image2)
+    obj_match <- locate_allObjects(image1, image2, class1, class2)
     pairs <- match_pairs(obj_match) #1-to-1
     return(as.vector(pairs))
 }
@@ -139,7 +139,7 @@ match_pairs <- function(obj_match) {
 
 
 #' Matches all the obejects in image1 to the objects in image 2
-locate_allObjects <- function(image1, image2) {
+locate_allObjects <- function(image1, image2, class1, class2) {
     nObjects1 <- max(image1) #objects in first image
     nObjects2 <- max(image2) #objects in second image
 
@@ -152,16 +152,16 @@ locate_allObjects <- function(image1, image2) {
 
     ## here we match each object in image1 to all the near-by objects in image2.
     for(obj_id1 in 1:nObjects1) {
-        obj1_extent <- get_objExtent(image1, obj_id1) #location and radius
+        obj1_extent <- get_objClass_extent(image1, class1, obj_id1) #location and radius
         shift <- get_std_flowVector(obj1_extent, image1, image2, flow_margin, stdFlow_mag)
         #print(paste("fft shift", toString(shift)))
 
         search_box <- predict_searchExtent(obj1_extent, shift, search_margin)
         search_box <- check_searchBox(search_box, dim(image2)) #search within the image
         obj_found <- find_objects(search_box, image2)  # gives possible candidates
-        discrepancy <- get_discrepancy_all(obj_found, image2, search_box, obj1_extent)
+        disparity <- get_disparity_all(obj_found, image2, class2, search_box, obj1_extent)
 
-        obj_match <- save_objMatch(obj_id1, obj_found, discrepancy, obj_match)
+        obj_match <- save_objMatch(obj_id1, obj_found, disparity, obj_match)
 
         #print(paste(obj_id1, "==>", toString(obj_found)))
     }
@@ -188,6 +188,18 @@ get_objExtent <- function(labeled_image, obj_label) {
 }
 
 
+#Returns object_extent with number of pixel of each class for the given object.
+get_objClass_extent <- function(label_image, class_image, obj_label){
+    objExtent <- get_objExtent(label_image, obj_label)
+    objClass <- get_object_vertProfile(label_image, class_image, obj_label)
+    objExtent$Cg <- objClass$Cg
+    objExtent$Cb <- objClass$Cb
+    objExtent$Co <- objClass$Co
+    return(objExtent)
+}
+
+
+
 #' Takes in object info (radius and center) and two images to estimate ambient flow.
 #' margin is the additional region arround the object used to comput the flow vectors.
 get_objAmbientFlow <- function(obj_extent, img1, img2, margin) {
@@ -207,6 +219,7 @@ get_objAmbientFlow <- function(obj_extent, img1, img2, margin) {
 
     return(fft_flowVectors(flow_region1, flow_region2))
 }
+
 
 #' Alternative to get_objAmbientFlow.
 #' Flow vectors magnitude is clipped to given magnitude
@@ -251,6 +264,7 @@ fft_crossCov <- function (img1, img2) {
     return(fft_shift(crossCov))
 }
 
+
 #' Rearranges the crossCov matrix so that 'zero' frequency or DC component
 #'  is in the middle of the matrix.
 #'  This function is adopted from following discussion on stackOverflow
@@ -292,7 +306,6 @@ predict_searchExtent <- function(obj1_extent, shift, search_radius){
 
 
 
-
 #' Returns NA if search box  outside the image or very small.
 check_searchBox <- function(search_box, img_dims){
 
@@ -317,6 +330,7 @@ check_searchBox <- function(search_box, img_dims){
     }
 }
 
+
 #' Given the search box and image2, returns objects in the region
 find_objects <- function(search_box, image2) {
     #if search box is NA then object left the image
@@ -330,64 +344,67 @@ find_objects <- function(search_box, image2) {
 }
 
 
-
 #' Returns discrepancies of all the objects found within the search box or NA if
 #' no object is present.
-get_discrepancy_all <- function(obj_found, image2, search_box, obj1_extent) {
+get_disparity_all <- function(obj_found, image2, class2, search_box, obj1_extent) {
     if(is.na(obj_found[1]) || max(obj_found)==0) {
         obj_id2 <- 0
         dist_pred <- NA
         dist_actual <- NA
-        discrepancy <- NA
+        disparity <- NA
     } else {
         obj_found <- obj_found[obj_found>0] #remove 0
 
         if(length(obj_found)==1){ # if this is the only object
-            discrepancy <- get_discrepancy(obj_found, image2, search_box, obj1_extent)
-            if(discrepancy < 10) discrepancy <- 0 #lower the discrepancy if not too large
+            disparity <- get_disparity(obj_found, image2, class2, search_box, obj1_extent)
+            if(disparity < 10) disparity <- 0 #lower the disparity if not too large
 
         } else { # when more than one objects
-            discrepancy <- get_discrepancy(obj_found, image2, search_box, obj1_extent)
+            disparity <- get_disparity(obj_found, image2, class2, search_box, obj1_extent)
         }
     }
-    return(discrepancy)
+    return(disparity)
 }
 
-#' Saves discrepancy values in obj_match to obj_match array for appropriate objects
-save_objMatch <- function(obj_id1, obj_found, discrepancy, obj_match) {
-    if(discrepancy >15 || is.na(discrepancy)){
+
+#' Saves disparity values in obj_match to obj_match array for appropriate objects
+save_objMatch <- function(obj_id1, obj_found, disparity, obj_match) {
+    if(disparity >15 || is.na(disparity)){
         obj_match[obj_id1, obj_found] <- large_num
     } else {
-        obj_match[obj_id1, obj_found] <- discrepancy
+        obj_match[obj_id1, obj_found] <- disparity
     }
     return(obj_match)
 }
 
 
-#' Computes discrepancy for a single object. Check how it is computed.
+#' Computes disparity for a single object. Check how it is computed.
 #' This parameter has most effect on the acccuracy of tracks.
-get_discrepancy <- function(obj_found, image2, search_box, obj1_extent) {
+get_disparity <- function(obj_found, image2, class2, search_box, obj1_extent) {
     dist_pred <- c(NULL)
     dist_actual <- c(NULL)
+    change <- c(NULL)
     for(target_obj in obj_found){
-        target_extent <- get_objExtent(image2, target_obj)
+        target_extent <- get_objClass_extent(image2, class2, target_obj)
+
         euc_dist<- euclidean_dist(target_extent$obj_center, search_box$center_pred)
         dist_pred <- append(dist_pred, euc_dist)
 
         euc_dist<- euclidean_dist(target_extent$obj_center, obj1_extent$obj_center)
         dist_actual <- append(dist_actual, euc_dist)
         size_changed <- get_ratio(target_extent$obj_area, obj1_extent$obj_area) #change in size
-
-        discrepancy <- dist_pred + size_changed
-
+        change <- append(change, size_changed)
     }
-    return(discrepancy)
+    disparity <- dist_pred + change
+    return(disparity)
 }
+
 
 #' Returns  Euclidean distance between two vectors or matrices
 euclidean_dist <- function(vec1, vec2){
     sqrt(sum((vec1-vec2)^2))
 }
+
 
 #' Returns ratio (>=1) of bigger number to smaller number when given two number.
 get_ratio<-function(x, y){
@@ -488,6 +505,7 @@ create_outNC <- function(ofile, max_obs) {
     invisible(outNC)
 }
 
+
 #' Writes properties and uids for all objects.
 write_update<-function(outNC, current_objects, obj_props, obs_time){
     nobj <- length(current_objects$id1)
@@ -586,7 +604,9 @@ next_uid<-function(count=1){
     return(this_uid)
 }
 
-#' Return object's size, location and classification info, xyDist should be a list
+
+#' Return all the object's size, location and classification info,
+#' xyDist should be a list of x_dist and y_dist in km
 get_objectProp <- function(image1, class1, xyDist){
     objprop <- c(NULL)
     nobj <- max(image1)
@@ -598,14 +618,25 @@ get_objectProp <- function(image1, class1, xyDist){
         objprop$y <- append(objprop$y, floor(median(obj_index[, 2]))) #center row
         objprop$area <- append(objprop$area, length(obj_index[, 1]))
 
-        obj_class <- class1[image1==obj] #class of convection for the object
+        obj_class <- get_object_vertProfile(image1, class1, obj_label = obj) #class of convection for the object
+
         #store number of pixels with classification Cg, Cb, Co etc.
-        objprop$Cg <- append(objprop$Cg, length(obj_class[obj_class==1]))
-        objprop$Cb <- append(objprop$Cb, length(obj_class[obj_class==2]))
-        objprop$Co <- append(objprop$Co, length(obj_class[obj_class==3]))
+        objprop$Cg <- append(objprop$Cg, obj_class$Cg)
+        objprop$Cb <- append(objprop$Cb, obj_class$Cb)
+        objprop$Co <- append(objprop$Co, obj_class$Co)
     }
     objprop <- attach_xyDist(objprop, xyDist$x, xyDist$y)
     invisible(objprop)
+}
+
+
+#' Returns number of Cg, Cb and Co type pixels in the given object.
+get_object_vertProfile <- function(label_image, class_image, obj_label){
+    obj_class <- class_image[label_image==obj_label]
+    nCg <- length(obj_class[obj_class==1])
+    nCb <- length(obj_class[obj_class==2])
+    nCo <- length(obj_class[obj_class==3])
+    return(list(Cg = nCg, Cb = nCb, Co = nCo))
 }
 
 
@@ -627,6 +658,7 @@ survival_stats <- function(pairs, num_obj2) {
 }
 #==============================================================================#
 
+
 #------------------- Settings for tracking method etc. ------------------------#
 search_margin <- 5      #pixels
 flow_margin <- 5       #pixels
@@ -641,7 +673,7 @@ min_size <- 2           #objects smaller than this will be filter
 setwd("~/data/darwin_radar/2d/")
 infile_name <- "./cpol_2D_0506.nc" #a file for a season
 #outfile_name <- str_replace(infile_name, ".nc", "_tracks.nc")
-outfile_name <- "~/Desktop/test_desc2.nc"
+outfile_name <- "~/Desktop/test_trial.nc"
 print(paste("Opening output file", basename(outfile_name)))
 outNC <- create_outNC(outfile_name, max_obs)
 
@@ -688,7 +720,7 @@ for(scan in 2:nscans){
         next
     }
 
-    pairs <- get_matchPairs(frame1, frame2)
+    pairs <- get_matchPairs(frame1, frame2, class2)
     obj_props <- get_objectProp(frame1, class1, list(x=x, y=y)) #of frame1
 
     if(newRain){                #if this is newRain scan, init ids
