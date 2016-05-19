@@ -1,19 +1,20 @@
 library(ncdf4)
 library(plot3D)
 library(animation)
+library(RColorBrewer)
 
 #' Returns vertical classification Cg=1, Cb=2, Co=3
 get_vertical_class <- function(incFile, nscans) {
 
     steiner <- ncvar_get(incFile, varid= "steiner_class", start = c(1, 1, 1), count = c(-1, -1, nscans))
-    steiner <- replace(steiner, steiner<2, NA)
 
 
     conv_height <- ncvar_get(incFile, varid= "zero_dbz_cont", start = c(1, 1, 1), count = c(-1, -1, nscans))
-    conv_height <- replace(conv_height, is.na(steiner), NA)
+    conv_height <- replace(conv_height, steiner!=2, 0.0) #remove non-convective
 
 
     #min max scan levels for classification
+    #names  <- c("Cg", "Cb", "Co")
     min_level <- c(5, 15, 31)
     max_level <- c(14, 30, 40)
 
@@ -58,7 +59,7 @@ plot_track<-function(incf_tracks, track_ids){
     for(track in 1:nids){
         xdist <- ncvar_get(incf_tracks, varid="x_dist", start = c(track_ids[track, 1], track_ids[track, 2]), count=c(1, 1))
         ydist <- ncvar_get(incf_tracks, varid="y_dist", start = c(track_ids[track, 1], track_ids[track, 2]), count=c(1, 1))
-        if(dur[track_ids[track, 2]]>3)
+        if(dur[track_ids[track, 2]]>1)
             text(xdist, ydist, labels = toString(track_ids[track, 2]), cex = 1.0)
     }
 }
@@ -66,7 +67,7 @@ plot_track<-function(incf_tracks, track_ids){
 
 
 #read tracks
-ifile_tracks <- "~/Desktop/test_desc2.nc"
+ifile_tracks <- "~/Desktop/test_trial.nc"
 incf_tracks  <- nc_open(ifile_tracks)
 
 tracks <-  ncvar_get(incf_tracks, varid ="echo_id")
@@ -82,60 +83,30 @@ x <- ncvar_get(incf_radar, varid="x")
 y <- ncvar_get(incf_radar, varid="y")
 time <- ncvar_get(incf_radar, varid = "time")
 time <- change_baseEpoch(time, From_epoch =as.Date("2004-01-01"))
+time_posix <- as.POSIXct(time, origin = "1970-01-01", tz="UTC")
+
+#mask <-
 
 #read the data and get height data from it
 vClass <- get_vertical_class(incf_radar, ntime)
 scan1 <- get_firstRainyScan(vClass)
 
+
+colors <- rev(brewer.pal(name = "Set1", n=3))
+colors <- c("white", colors)
+
+
+
 saveGIF({
-for(scan in 80:100) {
-    print(paste("scan ", scan))
-    image2D(vClass[, , scan], x=x, y=y)
+for(scan in 1:ntime) {
+    image2D(vClass[, , scan], x=x, y=y, col = colors, breaks = c(-99, 0, 1, 2, 3), NAcol = "grey",
+            xlab="Distance from Radar [Km]", ylab="Distance from Radar [Km]")
     track_ids <- get_track_ids(incf_tracks, time[scan])
+    title(main=strftime(time_posix[scan], tz = "UTC", usetz = TRUE))
+    print(strftime(time_posix[scan], tz = "UTC", usetz = TRUE))
+
     if(is.empty(track_ids)) next
     plot_track(incf_tracks, track_ids)
 }
-}, movie.name = "tracks1.gif", interval = 0.5)
+}, movie.name = "tracks_trial.gif", interval = 0.5)
 
-
-
-#pdf("~/Desktop/tracks_desc2.pdf")
-plot(x=NULL, y=NULL, xlim=c(-150, 150), ylim=c(-150, 150))
-
-cols <- rep(brewer.pal("Dark2", n=8), 30)
-
-for(id in 1:ntracks){
-    dur <- ncvar_get(incf_tracks, varid = "duration", start=id, count = 1)
-    xdist <- ncvar_get(incf_tracks, varid = "x_dist", start = c(1, id), count = c(dur, 1))
-    ydist <- ncvar_get(incf_tracks, varid = "y_dist", start = c(1, id), count = c(dur, 1))
-    lines(xdist, ydist, col=cols[id])
-}
-
-colors <- brewer.pal(name = "Accent", n=1)
-naCol <- alpha.col(col="white", alpha = 0)
-#make GIF
-#plot Reflectivity
-saveGIF({
-    for(scan in 90:100){
-        image2D(z = steiner[, , 1], x = x, y = y, breaks = seq(1, 2, by=1), col = colors[1],
-                xlab="Distance from Radar [Km]", ylab="Distance from Radar [Km]", NAcol = white)
-        for(id in 1:ntracks){
-            dur <- ncvar_get(incf_tracks, varid = "duration", start=id, count = 1)
-            xdist <- ncvar_get(incf_tracks, varid = "x_dist", start = c(1, id), count = c(dur, 1))
-            ydist <- ncvar_get(incf_tracks, varid = "y_dist", start = c(1, id), count = c(dur, 1))
-            lines(xdist, ydist, col=cols[id])
-        }
-        par(new=TRUE)
-        image2D(z = steiner[, , scan], x = x, y = y, breaks = seq(1, 2, by=1), col = colors[1],
-                xlab="Distance from Radar [Km]", ylab="Distance from Radar [Km]", NAcol = white)
-        title(main="Bringi Reflectivity")
-    }
-}, movie.name = "tracks.gif", interval = 0.2)
-
-
-
-
-
-
-
-dev.off()
