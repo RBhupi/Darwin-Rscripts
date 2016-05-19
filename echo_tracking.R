@@ -176,10 +176,10 @@ get_objExtent <- function(labeled_image, obj_label) {
     #center indices of the object assuming it is a rectangle
     obj_index <- which(labeled_image==obj_label, arr.ind = TRUE)
 
-    rlength <- max(obj_index[, 1]) - min(obj_index[, 1]) + 1
-    clength <- max(obj_index[, 2]) - min(obj_index[, 2]) + 1
+    xlength <- max(obj_index[, 1]) - min(obj_index[, 1]) + 1
+    ylength <- max(obj_index[, 2]) - min(obj_index[, 2]) + 1
 
-    obj_radius<- max(c(rlength, clength))/2 #maximum possible object radius
+    obj_radius<- max(c(xlength, ylength))/2 #maximum possible object radius
     obj_center <- c(min(obj_index[, 1])+obj_radius, min(obj_index[, 2]) + obj_radius)
     obj_area <- length(obj_index[, 1])  #size in pixels
 
@@ -378,7 +378,7 @@ get_discrepancy <- function(obj_found, image2, search_box, obj1_extent) {
         dist_actual <- append(dist_actual, euc_dist)
         size_changed <- get_ratio(target_extent$obj_area, obj1_extent$obj_area) #change in size
 
-        discrepancy <- dist_pred + size_changed + dist_actual
+        discrepancy <- dist_pred + size_changed
 
     }
     return(discrepancy)
@@ -594,8 +594,8 @@ get_objectProp <- function(image1, class1, xyDist){
     for(obj in seq(nobj)){
         obj_index <- which(image1==obj, arr.ind = TRUE)
         objprop$id1 <- append (objprop$id1, obj)  #id in frame1
-        objprop$x <- append(objprop$x, floor(median(obj_index[, 2]))) #center column
-        objprop$y <- append(objprop$y, floor(median(obj_index[, 1]))) #center row
+        objprop$x <- append(objprop$x, floor(median(obj_index[, 1]))) #center column
+        objprop$y <- append(objprop$y, floor(median(obj_index[, 2]))) #center row
         objprop$area <- append(objprop$area, length(obj_index[, 1]))
 
         obj_class <- class1[image1==obj] #class of convection for the object
@@ -629,7 +629,7 @@ survival_stats <- function(pairs, num_obj2) {
 
 #------------------- Settings for tracking method etc. ------------------------#
 search_margin <- 5      #pixels
-flow_margin <- 10       #pixels
+flow_margin <- 5       #pixels
 stdFlow_mag <- 3        #fft_flow will not be faster than this
 large_num <- 100000     #a very large number
 max_obs<- 100           #longest track that is likely to be recorded
@@ -640,8 +640,8 @@ min_size <- 2           #objects smaller than this will be filter
 #----------------------------------------------------------------Calling Program
 setwd("~/data/darwin_radar/2d/")
 infile_name <- "./cpol_2D_0506.nc" #a file for a season
-outfile_name <- str_replace(infile_name, ".nc", "_tracks.nc")
-#outfile_name <- "~/Desktop/test.nc"
+#outfile_name <- str_replace(infile_name, ".nc", "_tracks.nc")
+outfile_name <- "~/Desktop/test_desc2.nc"
 print(paste("Opening output file", basename(outfile_name)))
 outNC <- create_outNC(outfile_name, max_obs)
 
@@ -656,7 +656,7 @@ time <- ncvar_get(ncfile, varid="time")
 time <- change_baseEpoch(time, From_epoch = as.Date("2004-01-01"))
 
 
-nscans <- length(time)
+nscans <- 144 #length(time)
 newRain <- TRUE         #is this new rainy scan after dry period?
 
 print(paste("Total scans in this file", nscans))
