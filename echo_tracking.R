@@ -1,31 +1,36 @@
-#!---------------------------------------------------------------------------
-#' @title Tracking Convective Echoes in CPOL Radar Data.
-#' @author Bhupendra Raut (www.baraut.info)
-#' @description This R script reads netCDF files containing echo heights and rain classification
+#'---------------------------------------------------------------------------
+#' Tracking Convective Echoes in CPOL Radar Data.
+#'
+#' Bhupendra Raut (www.baraut.info)
+#'
+#' This R script reads netCDF files containing echo heights and rain classification
 #' identify objects and estimates flow vectors, using phase correlation with FFT (Leese et al 1971).
 #' Then for each object the search region is predicted for next frame and the objects in that
 #' region (in frame2) are assign to the object in frame 1.
-#' @reference :Leese, John A., Charles S. Novak, and Bruce B. Clark.
-#'           "An automated technique for obtaining cloud motion from geosynchronous
-#'           satellite data using cross correlation."
-#'           Journal of applied meteorology 10.1 (1971): 118-132.
-
-#' @todo
-#' 1. Check overlapping pixels to identify better match.
-#' 2.
 #'
+#'
+#'
+#' ToDo
+#' 1. Check overlapping pixels to identify better match.
+#' 2. Use vertical profile of clouds for better assignment
+#' 3. change size_change factor
+#+ echo=FALSE
 #==========================================================================================
 # Start the clock!
 start_time <- proc.time()
 
-library(ncdf4)
+#+ echo=TRUE
+#' Following R packages are required.
+library(ncdf4)    #Read/Write netcdf-4 files
 library(EBImage)  # for bwlabel,
-library(spatstat) #for smoothing
-library(stringr)
-library(clue)  #solve_LSAP()
+library(spatstat) #for smoothing in fft functions
+library(stringr)  #string manipulations
+library(clue)     #solve_LSAP() assignment problem
 
+#+ echo=FALSE
 #----------------------------------------------------------------------fucntions
-#' Plots image with objects labels
+
+#' Plots image with objects labels. This is used to test images when processed 1-by-1.
 plot_objects_label<-function(labeled_image, xvalues, yvalues){
     image2D(replace(labeled_image, labeled_image==0, NA), x=xvalues, y=yvalues)
     grid()
@@ -47,30 +52,36 @@ plot_objects_label<-function(labeled_image, xvalues, yvalues){
     }
 }
 
-#' Returns a single radar scan with echo objects lebeled. smaller objects are removed.
+#' Returns a single radar scan from the netcdf file.
+#' Smaller objects are removed and the rest are lebeled.
 get_filteredFrame <- function(ncfile, scan_num, min_size) {
     echo_height <- get_convHeight(ncfile, scan_num)
     labeled_echo <- bwlabel(echo_height)          #label objects
     frame <-clear_smallEchoes(labeled_echo, min_size)
+    invisible(frame)
 }
 
-#' Returns a single radar scan with echo objects lebeled. smaller objects are removed.
+#' Returns a single radar scan of classification for given scan_num.
+#' Convective objects lebeled with vertical class 1=Cg, 2=Cb, 3=Co
 get_classFrame <- function(ncfile, scan_num) {
     echo_height <- get_convHeight(ncfile, scan_num)
-    get_vertical_class(echo_height)
+    get_vertical_class(echo_height) #returns this
 }
 
 
-#' Reads height and classification data and replaces non-convective amd missing pixels with zero.
+#' Reads height and classification data and replaces non-convective and missing pixels with zero.
 get_convHeight <- function(ncfile, scan) {
-    dbz_height <- ncvar_get(ncfile, varid = "zero_dbz_cont", start = c(1, 1, scan), count = c(-1, -1, 1))
-    steiner <- ncvar_get(ncfile, varid = "steiner_class", start = c(1, 1, scan), count = c(-1, -1, 1))
+    dbz_height <- ncvar_get(ncfile, varid = "zero_dbz_cont",
+                            start = c(1, 1, scan), count = c(-1, -1, 1))
+
+    steiner <- ncvar_get(ncfile, varid = "steiner_class",
+                         start = c(1, 1, scan), count = c(-1, -1, 1))
 
     dbz_height <-replace(dbz_height, steiner != 2, 0.0)      #set non-convective pixels to zeros
     dbz_height <- replace(dbz_height, is.na(dbz_height), 0.0)     #remove NAs
 }
 
-#' Returns labeled image after removing objects smaller than min_size
+#' Takes in labeled image removes objects smaller than min_size and returns re-labeled image.
 clear_smallEchoes <- function(label_image, min_size) {
     size_table <- table(label_image[label_image>0]) # remove zero values
     onePix_objects <- as.vector(which(size_table < min_size))
@@ -83,7 +94,7 @@ clear_smallEchoes <- function(label_image, min_size) {
     invisible(label_image)
 }
 
-#' Returns vertical classification Cg=1, Cb=2, Co=3
+#' Given the convective height image, it returns vertical classification (Cg=1, Cb=2, Co=3)
 get_vertical_class <- function(conv_height) {
     #min max scan levels for classification
     min_level <- c(5, 15, 31)
@@ -97,7 +108,8 @@ get_vertical_class <- function(conv_height) {
 }
 
 
-#' Changes base epoch of. Default To_epoch is "1970-01-01.
+#' Changes base epoch of 'time in seconds'. Default To_epoch is "1970-01-01.
+#' From_epoch should be in the format as.Date("2004-01-01").
 change_baseEpoch <- function(time_seconds, From_epoch, To_epoch=as.Date("1970-01-01")){
     epoch_diff <- as.integer(From_epoch-To_epoch)
     epoch_diff_seconds <- epoch_diff * 86400 #seconds in a day
@@ -107,7 +119,7 @@ change_baseEpoch <- function(time_seconds, From_epoch, To_epoch=as.Date("1970-01
 
 
 #' Given two images, the function identifies the matching
-#' objects and pair them appropriatly.
+#' objects and pair them appropriatly. See disparity function.
 get_matchPairs <- function(image1, image2, class2) {
     nObjects1 <- max(image1) #objects in first image
     nObjects2 <- max(image2) #objects in second image
@@ -125,12 +137,13 @@ get_matchPairs <- function(image1, image2, class2) {
 }
 
 #' Matches objects into pairs and removes bad matching.
+#' The bad matching is when disparity is more than the set value.
 match_pairs <- function(obj_match) {
     pairs <- solve_LSAP(obj_match)
     pairs <- as.vector(pairs)
     ## remove bad matching
     for(pair in 1:length(pairs)){
-        if(obj_match[pair, pairs[pair]] >15){
+        if(obj_match[pair, pairs[pair]] >10){
             pairs[pair] <- 0
         }
     }
@@ -138,7 +151,8 @@ match_pairs <- function(obj_match) {
 }
 
 
-#' Matches all the obejects in image1 to the objects in image 2
+#' Matches all the obejects in image1 to the objects in image 2.
+#' This is the main function to be called on two sets of radar images, for tracking.
 locate_allObjects <- function(image1, image2, class1, class2) {
     nObjects1 <- max(image1) #objects in first image
     nObjects2 <- max(image2) #objects in second image
@@ -154,7 +168,6 @@ locate_allObjects <- function(image1, image2, class1, class2) {
     for(obj_id1 in 1:nObjects1) {
         obj1_extent <- get_objClass_extent(image1, class1, obj_id1) #location and radius
         shift <- get_std_flowVector(obj1_extent, image1, image2, flow_margin, stdFlow_mag)
-        #print(paste("fft shift", toString(shift)))
 
         search_box <- predict_searchExtent(obj1_extent, shift, search_margin)
         search_box <- check_searchBox(search_box, dim(image2)) #search within the image
@@ -162,8 +175,6 @@ locate_allObjects <- function(image1, image2, class1, class2) {
         disparity <- get_disparity_all(obj_found, image2, class2, search_box, obj1_extent)
 
         obj_match <- save_objMatch(obj_id1, obj_found, disparity, obj_match)
-
-        #print(paste(obj_id1, "==>", toString(obj_found)))
     }
 
     invisible(obj_match)
@@ -171,7 +182,7 @@ locate_allObjects <- function(image1, image2, class1, class2) {
 
 
 
-#' Takes in a labeled image and finds the radius and the center of the given object.
+#' Takes in a labeled image and finds the radius, area and the center of the given object.
 get_objExtent <- function(labeled_image, obj_label) {
     #center indices of the object assuming it is a rectangle
     obj_index <- which(labeled_image==obj_label, arr.ind = TRUE)
@@ -188,7 +199,7 @@ get_objExtent <- function(labeled_image, obj_label) {
 }
 
 
-#Returns object_extent with number of pixel of each class for the given object.
+#' Returns object_extent with number of pixel of each class for the given object.
 get_objClass_extent <- function(label_image, class_image, obj_label){
     objExtent <- get_objExtent(label_image, obj_label)
     objClass <- get_object_vertProfile(label_image, class_image, obj_label)
@@ -201,7 +212,7 @@ get_objClass_extent <- function(label_image, class_image, obj_label){
 
 
 #' Takes in object info (radius and center) and two images to estimate ambient flow.
-#' margin is the additional region arround the object used to comput the flow vectors.
+#' Margin is the additional region arround the object used to comput the flow vectors.
 get_objAmbientFlow <- function(obj_extent, img1, img2, margin) {
     #coordinates of the flowregion
     r1 <- obj_extent$obj_center[1] - obj_extent$obj_radius - margin
@@ -232,6 +243,11 @@ get_std_flowVector<-function(obj_extent, img1, img2, margin, magnitude){
 
 
 #' Estimates flow vectors in two images using cross covariance of the images.
+#'
+#' Leese, John A., Charles S. Novak, and Bruce B. Clark.
+#'           "An automated technique for obtaining cloud motion from geosynchronous
+#'           satellite data using cross correlation."
+#'           Journal of applied meteorology 10.1 (1971): 118-132.
 fft_flowVectors <- function (im1, im2) {
     if(max(im1)==0 || max(im2)==0){
         return(c(0, 0))                         #if no object found
@@ -252,7 +268,7 @@ fft_flowVectors <- function (im1, im2) {
 }
 
 
-#' Computes cross-covariance using FFT, returns shifted covariance image
+#' Computes cross-covariance using FFT method, returns shifted covariance image
 fft_crossCov <- function (img1, img2) {
     fft1_conj <- Conj(fft(img1)) #complex conjugate
     fft2 <- fft(img2)
@@ -266,9 +282,7 @@ fft_crossCov <- function (img1, img2) {
 
 
 #' Rearranges the crossCov matrix so that 'zero' frequency or DC component
-#'  is in the middle of the matrix.
-#'  This function is adopted from following discussion on stackOverflow
-#'  http://stackoverflow.com/questions/30630632/performing-a-phase-correlation-with-fft-in-r
+#'  is in the middle of the matrix. Taken from stackoverflow Que. 30630632
 fft_shift <- function(fft_mat) {
     if(class(fft_mat)=='matrix') {
         rd2 <- floor(nrow(fft_mat)/2)
@@ -292,7 +306,7 @@ fft_shift <- function(fft_mat) {
 }
 
 
-#' Predicts search extent for the object in image2 given shift
+#' Predicts search extent/region for the object in image2 given the image shift.
 predict_searchExtent <- function(obj1_extent, shift, search_radius){
     shifted_center <- obj1_extent$obj_center + shift
 
@@ -305,8 +319,7 @@ predict_searchExtent <- function(obj1_extent, shift, search_radius){
 }
 
 
-
-#' Returns NA if search box  outside the image or very small.
+#' Returns NA if search box  outside the image or search box is very small.
 check_searchBox <- function(search_box, img_dims){
 
     if(search_box$x1 <= 0){
@@ -323,7 +336,7 @@ check_searchBox <- function(search_box, img_dims){
     }
 
     #search box should be large enough
-    if(search_box$x2-search_box$x1 < 5 || search_box$y2-search_box$y1 < 5 ){
+    if(search_box$x2-search_box$x1 < 4 || search_box$y2-search_box$y1 < 4 ){
         return(NA)
     } else {
         return(search_box)
@@ -344,9 +357,11 @@ find_objects <- function(search_box, image2) {
 }
 
 
-#' Returns discrepancies of all the objects found within the search box or NA if
+#' Returns disparities of all the objects found within the search box or NA if
 #' no object is present.
 get_disparity_all <- function(obj_found, image2, class2, search_box, obj1_extent) {
+
+
     if(is.na(obj_found[1]) || max(obj_found)==0) {
         obj_id2 <- 0
         dist_pred <- NA
@@ -357,7 +372,8 @@ get_disparity_all <- function(obj_found, image2, class2, search_box, obj1_extent
 
         if(length(obj_found)==1){ # if this is the only object
             disparity <- get_disparity(obj_found, image2, class2, search_box, obj1_extent)
-            if(disparity < 10) disparity <- 0 #lower the disparity if not too large
+            if(disparity < 5) disparity <- 0 #lower the disparity if not too large
+            else disparity <- disparity-5  #make this a global setting variable
 
         } else { # when more than one objects
             disparity <- get_disparity(obj_found, image2, class2, search_box, obj1_extent)
@@ -367,7 +383,8 @@ get_disparity_all <- function(obj_found, image2, class2, search_box, obj1_extent
 }
 
 
-#' Saves disparity values in obj_match to obj_match array for appropriate objects
+#' If disparity is large then it saves a large number for the value to reduce
+#' the chances of this pairing to zero, else it save the value in the obj_match array.
 save_objMatch <- function(obj_id1, obj_found, disparity, obj_match) {
     if(disparity >15 || is.na(disparity)){
         obj_match[obj_id1, obj_found] <- large_num
@@ -378,8 +395,10 @@ save_objMatch <- function(obj_id1, obj_found, disparity, obj_match) {
 }
 
 
-#' Computes disparity for a single object. Check how it is computed.
-#' This parameter has most effect on the acccuracy of tracks.
+#' Computes disparity for a single object. Check how it is computed for detail.
+#' This parameter has most effect on the acccuracy of the tracks.
+#'
+#' ToDo: Should I use ratio of size or difference in size for disparity?
 get_disparity <- function(obj_found, image2, class2, search_box, obj1_extent) {
     dist_pred <- c(NULL)
     dist_actual <- c(NULL)
@@ -392,7 +411,8 @@ get_disparity <- function(obj_found, image2, class2, search_box, obj1_extent) {
 
         euc_dist<- euclidean_dist(target_extent$obj_center, obj1_extent$obj_center)
         dist_actual <- append(dist_actual, euc_dist)
-        size_changed <- get_ratio(target_extent$obj_area, obj1_extent$obj_area) #change in size
+        #size_changed <- get_ratio(target_extent$obj_area, obj1_extent$obj_area) #change in size
+        size_changed <- abs(target_extent$obj_area - obj1_extent$obj_area)
         change <- append(change, size_changed)
     }
     disparity <- dist_pred + change
@@ -400,7 +420,7 @@ get_disparity <- function(obj_found, image2, class2, search_box, obj1_extent) {
 }
 
 
-#' Returns  Euclidean distance between two vectors or matrices
+#' Returns  Euclidean distance between two vectors or matrices.
 euclidean_dist <- function(vec1, vec2){
     sqrt(sum((vec1-vec2)^2))
 }
@@ -506,7 +526,7 @@ create_outNC <- function(ofile, max_obs) {
 }
 
 
-#' Writes properties and uids for all objects.
+#' Writes properties and uids for all objects into output netcdf file.
 write_update<-function(outNC, current_objects, obj_props, obs_time){
     nobj <- length(current_objects$id1)
 
@@ -531,7 +551,7 @@ write_update<-function(outNC, current_objects, obj_props, obs_time){
 }
 
 
-#' Writes number of observations for dead objects.
+#' Writes number of observations for dead objects. The time written here is one step earlier (needs correction).
 write_duration <- function(outNC, current_objects){
     nobj <- length(current_objects$id1)
 
@@ -544,7 +564,7 @@ write_duration <- function(outNC, current_objects){
 }
 
 
-#' Write survival stats to the file for each scan
+#' Write survival stats (number of lived, dead and born objects) to the file for each scan.
 write_survival <- function(outNC, survival_stat, time, scan){
     if(!is.atomic(survival_stat)){
         survival_stat <- unlist(survival_stat, use.names = FALSE)
@@ -555,7 +575,8 @@ write_survival <- function(outNC, survival_stat, time, scan){
 }
 
 
-#' Returns a dataframe for objects with ids in frame1 and frame2 and uids (same as ids for first frame).
+#' Returns a dataframe for objects with unique ids and their corresponding ids in frame1 and frame2.
+#' This function is called when new rainy scan is seen after the period of no rain or the first time.
 init_uids <- function(first_frame, pairs){
     nobj <- max(first_frame) #number of objects in frame1
     objects_mat <- matrix(data = NA, ncol = 4, nrow = nobj)
@@ -571,7 +592,9 @@ init_uids <- function(first_frame, pairs){
 
 
 #' Removes dead objects, updates living objects and assign new uids to new born objects.
-#' Also, updates number of observations for each echo. This is a complecated function :-\.
+#' Also, updates number of valid observations for each echo.
+#' This function is called when rain continues from the last frame.
+#' This is a complicated function to understand.
 update_current_objects <- function(frame1, pairs, old_objects){
     nobj <- max(frame1)
     objects_mat <- matrix(data = NA, ncol = 4, nrow = nobj)
@@ -606,7 +629,7 @@ next_uid<-function(count=1){
 
 
 #' Return all the object's size, location and classification info,
-#' xyDist should be a list of x_dist and y_dist in km
+#' xyDist should be a list of x_dist and y_dist in km.
 get_objectProp <- function(image1, class1, xyDist){
     objprop <- c(NULL)
     nobj <- max(image1)
@@ -648,7 +671,7 @@ attach_xyDist<-function(obj_props, xdist, ydist){
 }
 
 
-#' Returns a list with number of objects lived, died and born in this step.
+#' Returns a list with number of objects lived, died and born between this step and the next one.
 survival_stats <- function(pairs, num_obj2) {
     pairs_vec <- as.vector(pairs)
     obj_lived <- length(pairs_vec[pairs_vec>0])
@@ -656,22 +679,25 @@ survival_stats <- function(pairs, num_obj2) {
     obj_born <- num_obj2 - obj_lived
     return(list(lived=obj_lived, died=obj_died, born=obj_born))
 }
+#+ echo=FALSE
 #==============================================================================#
 
-
-#------------------- Settings for tracking method etc. ------------------------#
+#+ echo=TRUE
+#'----------------------- Settings for tracking method ------------------------#
 search_margin <- 5      #pixels
-flow_margin <- 5       #pixels
-stdFlow_mag <- 3        #fft_flow will not be faster than this
+flow_margin <- 4       #pixels
+stdFlow_mag <- 4        #fft_flow will not be faster than this
 large_num <- 100000     #a very large number
 max_obs<- 100           #longest track that is likely to be recorded
-uid_counter <- 0        #(a global variable) start unique id with zero.
+uid_counter <- 0        #(a global variable) to start uid with 1, count from 0.
 min_size <- 2           #objects smaller than this will be filter
 #==============================================================================#
 
-#----------------------------------------------------------------Calling Program
+#'Here we call the above functions to track convective echoes in the subsequent images.
+#+ echo=TRUE, eval=FALSE, warning=FALSE, error=FALSE, message=FALSE
+
 setwd("~/data/darwin_radar/2d/")
-infile_name <- "./cpol_2D_0506.nc" #a file for a season
+infile_name <- "./cpol_2D_0405.nc" #a file for a season
 #outfile_name <- str_replace(infile_name, ".nc", "_tracks.nc")
 outfile_name <- "~/Desktop/test_trial.nc"
 print(paste("Opening output file", basename(outfile_name)))
@@ -688,18 +714,24 @@ time <- ncvar_get(ncfile, varid="time")
 time <- change_baseEpoch(time, From_epoch = as.Date("2004-01-01"))
 
 
-nscans <- 144 #length(time)
+start_scan <- 1
+end_scan <- 10
+
 newRain <- TRUE         #is this new rainy scan after dry period?
 
-print(paste("Total scans in this file", nscans))
-pb = txtProgressBar(min =2, max = nscans, initial = 2, style = 3) #progress bar
+print(paste("Total scans in this file", end_scan-start_scan+1))
+pb = txtProgressBar(min =start_scan, max = end_scan, initial = 1, style = 3) #progress bar
 
-# We read the first frame and call it second frame so that in the loop,
-# this frame will be copied to frame1 and next frame will be frame2.
-frame2 <- get_filteredFrame(ncfile, 1, min_size)
-class2 <- get_classFrame(ncfile, 1) #classifictaion
+#' To continuousely track the echoes in the images,
+#' we read the first frame and save it in to frame2 then in the loop,
+#' this frame will be copied to frame1 and next frame will be frame2.
+#'
+#' frame1 <-- frame2 <-- new frame  (repeat)
+#+ echo=TRUE, eval=FALSE, warning=FALSE, error=FALSE, message=FALSE
+frame2 <- get_filteredFrame(ncfile, start_scan, min_size)
+class2 <- get_classFrame(ncfile, start_scan) #classifictaion
 
-for(scan in 2:nscans){
+for(scan in (start_scan+1):end_scan){
     setTxtProgressBar(pb, scan) #progress bar
 
     frame1 <- frame2
@@ -707,13 +739,13 @@ for(scan in 2:nscans){
     frame2 <- get_filteredFrame(ncfile, scan, min_size)
     class2 <- get_classFrame(ncfile, scan)
 
-    if(scan==nscans){ #if this is the last scan make it zero.
+    if(scan==end_scan){ #if this is the last scan make it zero.
         frame2 <- replace(frame2, frame2>0, 0)
     }
 
 
     #skip if no echoes in frame 1
-    if(max(frame1)==0){         #if no echoes in frame1
+    if(max(frame1, na.rm = TRUE)==0){         #if no echoes in frame1
         newRain = TRUE          #next rain will be newRain
         write_survival(outNC, survival_stat = rep(0, 3),
                        time = time[scan-1], scan = scan)
@@ -750,3 +782,9 @@ nc_close(outNC)
 # Stop the clock and print the time elapsed
 time_elapsed <- (proc.time() - start_time)
 print(paste("time elapsed", round(time_elapsed[3]/60), "minutes"))
+
+
+#+ echo=FALSE, eval=TRUE, warning=FALSE, error=FALSE, message=FALSE
+library(RColorBrewer)
+library(mvbutils)
+foodweb(border = TRUE, boxcolor = "skyblue", textcolor = "black", cex = 0.8, lwd=2)
