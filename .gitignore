@@ -20,3 +20,6 @@ vignettes/*.pdf
 *.pdf
 /cpol/*
 *.png
+*.aux
+*.out
+*.log
