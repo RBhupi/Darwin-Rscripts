@@ -76,8 +76,8 @@ ntracks <- length(tracks)
 
 #read radar data
 setwd("~/data/darwin_radar/2d/")
-ifile_radar <- "./cpol_2D_0506.nc" #a file for a season
-ntime <-144
+ifile_radar <- "./cpol_2D_0405.nc" #a file for a season
+ntime <- 1000
 incf_radar <- nc_open(ifile_radar)
 x <- ncvar_get(incf_radar, varid="x")
 y <- ncvar_get(incf_radar, varid="y")
@@ -85,7 +85,6 @@ time <- ncvar_get(incf_radar, varid = "time")
 time <- change_baseEpoch(time, From_epoch =as.Date("2004-01-01"))
 time_posix <- as.POSIXct(time, origin = "1970-01-01", tz="UTC")
 
-#mask <-
 
 #read the data and get height data from it
 vClass <- get_vertical_class(incf_radar, ntime)
@@ -95,17 +94,23 @@ scan1 <- get_firstRainyScan(vClass)
 colors <- rev(brewer.pal(name = "Set1", n=3))
 colors <- c("white", colors)
 
-
+empty_counter <- 0
 
 saveGIF({
 for(scan in 1:ntime) {
+    track_ids <- get_track_ids(incf_tracks, time[scan])
+    if(empty_counter>2 && is.empty(track_ids)) next
+    else if (!is.empty(track_ids))
+        empty_counter <-0
+
     image2D(vClass[, , scan], x=x, y=y, col = colors, breaks = c(-99, 0, 1, 2, 3), NAcol = "grey",
             xlab="Distance from Radar [Km]", ylab="Distance from Radar [Km]")
-    track_ids <- get_track_ids(incf_tracks, time[scan])
     title(main=strftime(time_posix[scan], tz = "UTC", usetz = TRUE))
-    print(strftime(time_posix[scan], tz = "UTC", usetz = TRUE))
+    if(is.empty(track_ids)){
+        empty_counter <- empty_counter + 1
+        next
+    }
 
-    if(is.empty(track_ids)) next
     plot_track(incf_tracks, track_ids)
 }
 }, movie.name = "tracks_trial.gif", interval = 0.5)
