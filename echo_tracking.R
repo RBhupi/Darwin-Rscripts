@@ -1,12 +1,22 @@
-#'---------------------------------------------------------------------------
-#' Tracking Convective Echoes in CPOL Radar Data.
+#' ---
+#' title: "Tracking Convection Echoes in CPOL Radar Data"
+#' author: "Bhupendra Raut"
+#' date: "June 2nd, 2016"
+#' ---
+
 #'
-#' Bhupendra Raut (www.baraut.info)
+#' This R script reads netCDF files containing maximum echo heights for 0 dBZ
+#' and rain classification from steiner method. I obtained these files from Benjamin Moebis.
+#' We first remove non-convective pixels and identify the contiguous convective regions.
+#' The flow vectors are estimated for the region of convection using phase correlation method (Leese et al 1971).
+#' Using these flow vector as the first guess,  the search region is predicted for each object.
+#' In the next frame, all objects in that region (in frame2) are assigned to the object in frame 1.
+#' The disparity/cost function is computed for each combination of pairs and assignment is done using
+#' Hungarian method. For the object pairs with large disparity, we assumed that the old object is dead in frame1
+#' and the new object was born in frame2.
 #'
-#' This R script reads netCDF files containing echo heights and rain classification
-#' identify objects and estimates flow vectors, using phase correlation with FFT (Leese et al 1971).
-#' Then for each object the search region is predicted for next frame and the objects in that
-#' region (in frame2) are assign to the object in frame 1.
+#' The unique identity numbers are produced for new objects and was kept constant through out the life of that object.
+#' No merging or spliting ia taken care of in this version of the code.
 #'
 #'
 #'
@@ -19,7 +29,7 @@
 # Start the clock!
 start_time <- proc.time()
 
-#+ echo=TRUE
+#+ echo=TRUE, eval=FALSE, warning=FALSE, error=FALSE, message=FALSE
 #' Following R packages are required.
 library(ncdf4)    #Read/Write netcdf-4 files
 library(EBImage)  # for bwlabel,
@@ -237,7 +247,8 @@ get_objAmbientFlow <- function(obj_extent, img1, img2, margin) {
 get_std_flowVector<-function(obj_extent, img1, img2, margin, magnitude){
     shift <- get_objAmbientFlow(obj_extent, img1, img2, margin)
     shift <- replace(shift, shift > magnitude, magnitude)
-    shift <- replace(shift, shift < magnitude*-1, magnitude*-1)
+    magnitude_negative <- magnitude * -1
+    shift <- replace(shift, shift < magnitude_negative, magnitude_negative)
     return(shift)
 }
 
@@ -254,7 +265,7 @@ fft_flowVectors <- function (im1, im2) {
     }
 
     #im1 <- replace(im1, im1==0, runif(1))       # add noise to image background
-    #im2 <- replace(im2, im1==0, runif(1))       # This may help when objects are bigger
+    #im2 <- replace(im2, im1==0, runif(1))       # when objects are big and smooth
 
     crossCov <- fft_crossCov(im1, im2)
     cov_smooth <- blur(as.im(crossCov))
@@ -411,8 +422,7 @@ get_disparity <- function(obj_found, image2, class2, search_box, obj1_extent) {
 
         euc_dist<- euclidean_dist(target_extent$obj_center, obj1_extent$obj_center)
         dist_actual <- append(dist_actual, euc_dist)
-        #size_changed <- get_ratio(target_extent$obj_area, obj1_extent$obj_area) #change in size
-        size_changed <- abs(target_extent$obj_area - obj1_extent$obj_area)
+        size_changed <- get_sizeChange(target_extent$obj_area, obj1_extent$obj_area) #change in size
         change <- append(change, size_changed)
     }
     disparity <- dist_pred + change
@@ -426,12 +436,12 @@ euclidean_dist <- function(vec1, vec2){
 }
 
 
-#' Returns ratio (>=1) of bigger number to smaller number when given two number.
-get_ratio<-function(x, y){
+#' Returns change in size of the eacho as ratio of bigger number to smaller number when given two number, minus 1.
+get_sizeChange<-function(x, y){
     if(x>=y)
-        return(x/y)
+        return(x/y - 1)
     else
-        return(y/x)
+        return(y/x - 1)
 }
 
 
@@ -460,7 +470,7 @@ create_outNC <- function(ofile, max_obs) {
                               compression = deflat, shuffle = TRUE)
 
     var_dur <- ncvar_def("duration", units = "", longname = "duration of echo in time-steps",
-                              dim=dim_echo, missval = -999, prec="integer",
+                         dim=dim_echo, missval = -999, prec="integer",
                          compression = deflat, shuffle = TRUE)
 
     var_time <- ncvar_def("record_time", units = "seconds since 1970-01-01 00:00:00 UTC",
@@ -551,7 +561,8 @@ write_update<-function(outNC, current_objects, obj_props, obs_time){
 }
 
 
-#' Writes number of observations for dead objects. The time written here is one step earlier (needs correction).
+#' Writes number of observations for dead objects.
+#' The time written here is one step earlier (needs correction).
 write_duration <- function(outNC, current_objects){
     nobj <- length(current_objects$id1)
 
@@ -581,10 +592,10 @@ init_uids <- function(first_frame, pairs){
     nobj <- max(first_frame) #number of objects in frame1
     objects_mat <- matrix(data = NA, ncol = 4, nrow = nobj)
 
-    objects_mat[, 1] <- seq(nobj) #id1
+    objects_mat[, 1] <- seq(nobj)               #id1
     objects_mat[, 2] <- next_uid(count = nobj) #unique ids
-    objects_mat[, 3] <- as.vector(pairs) #as they are in frame2
-    objects_mat[, 4] <-rep(1, nobj) #observation number for the echo
+    objects_mat[, 3] <- as.vector(pairs)#as they are in frame2
+    objects_mat[, 4] <-rep(1, nobj)     #observation number for the echo
     current_objects <- data.frame(objects_mat, row.names = NULL)
     colnames(current_objects) <- c("id1", "uid", "id2", "obs_num")
     return(current_objects)
@@ -715,7 +726,7 @@ time <- change_baseEpoch(time, From_epoch = as.Date("2004-01-01"))
 
 
 start_scan <- 1
-end_scan <- 10
+end_scan <- 25
 
 newRain <- TRUE         #is this new rainy scan after dry period?
 
@@ -784,7 +795,12 @@ time_elapsed <- (proc.time() - start_time)
 print(paste("time elapsed", round(time_elapsed[3]/60), "minutes"))
 
 
-#+ echo=FALSE, eval=TRUE, warning=FALSE, error=FALSE, message=FALSE
+
+#+ echo=FALSE, eval=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.width=9, fig.height=9, fig.cap="Function call graph"
 library(RColorBrewer)
 library(mvbutils)
 foodweb(border = TRUE, boxcolor = "skyblue", textcolor = "black", cex = 0.8, lwd=2)
+
+#'Run following command to generate documentation
+#'
+#' rmarkdown::render("~/projects/darwin/src/echo_tracking.R", output_format = "pdf_document")
