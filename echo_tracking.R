@@ -130,7 +130,7 @@ change_baseEpoch <- function(time_seconds, From_epoch, To_epoch=as.Date("1970-01
 
 #' Given two images, the function identifies the matching
 #' objects and pair them appropriatly. See disparity function.
-get_matchPairs <- function(image1, image2, class2) {
+get_matchPairs <- function(image1, image2) {
     nObjects1 <- max(image1) #objects in first image
     nObjects2 <- max(image2) #objects in second image
 
@@ -141,7 +141,7 @@ get_matchPairs <- function(image1, image2, class2) {
         return(zero_pairs)
     }
 
-    obj_match <- locate_allObjects(image1, image2, class1, class2)
+    obj_match <- locate_allObjects(image1, image2)
     pairs <- match_pairs(obj_match) #1-to-1
     return(as.vector(pairs))
 }
@@ -163,7 +163,7 @@ match_pairs <- function(obj_match) {
 
 #' Matches all the obejects in image1 to the objects in image 2.
 #' This is the main function to be called on two sets of radar images, for tracking.
-locate_allObjects <- function(image1, image2, class1, class2) {
+locate_allObjects <- function(image1, image2) {
     nObjects1 <- max(image1) #objects in first image
     nObjects2 <- max(image2) #objects in second image
 
@@ -176,13 +176,13 @@ locate_allObjects <- function(image1, image2, class1, class2) {
 
     ## here we match each object in image1 to all the near-by objects in image2.
     for(obj_id1 in 1:nObjects1) {
-        obj1_extent <- get_objClass_extent(image1, class1, obj_id1) #location and radius
+        obj1_extent <- get_objExtent(image1, obj_id1) #location and radius
         shift <- get_std_flowVector(obj1_extent, image1, image2, flow_margin, stdFlow_mag)
 
         search_box <- predict_searchExtent(obj1_extent, shift, search_margin)
         search_box <- check_searchBox(search_box, dim(image2)) #search within the image
         obj_found <- find_objects(search_box, image2)  # gives possible candidates
-        disparity <- get_disparity_all(obj_found, image2, class2, search_box, obj1_extent)
+        disparity <- get_disparity_all(obj_found, image2, search_box, obj1_extent)
 
         obj_match <- save_objMatch(obj_id1, obj_found, disparity, obj_match)
     }
@@ -370,7 +370,7 @@ find_objects <- function(search_box, image2) {
 
 #' Returns disparities of all the objects found within the search box or NA if
 #' no object is present.
-get_disparity_all <- function(obj_found, image2, class2, search_box, obj1_extent) {
+get_disparity_all <- function(obj_found, image2, search_box, obj1_extent) {
 
 
     if(is.na(obj_found[1]) || max(obj_found)==0) {
@@ -382,12 +382,12 @@ get_disparity_all <- function(obj_found, image2, class2, search_box, obj1_extent
         obj_found <- obj_found[obj_found>0] #remove 0
 
         if(length(obj_found)==1){ # if this is the only object
-            disparity <- get_disparity(obj_found, image2, class2, search_box, obj1_extent)
+            disparity <- get_disparity(obj_found, image2, search_box, obj1_extent)
             if(disparity < 5) disparity <- 0 #lower the disparity if not too large
             else disparity <- disparity-5  #make this a global setting variable
 
         } else { # when more than one objects
-            disparity <- get_disparity(obj_found, image2, class2, search_box, obj1_extent)
+            disparity <- get_disparity(obj_found, image2, search_box, obj1_extent)
         }
     }
     return(disparity)
@@ -410,12 +410,12 @@ save_objMatch <- function(obj_id1, obj_found, disparity, obj_match) {
 #' This parameter has most effect on the acccuracy of the tracks.
 #'
 #' ToDo: Should I use ratio of size or difference in size for disparity?
-get_disparity <- function(obj_found, image2, class2, search_box, obj1_extent) {
+get_disparity <- function(obj_found, image2, search_box, obj1_extent) {
     dist_pred <- c(NULL)
     dist_actual <- c(NULL)
     change <- c(NULL)
     for(target_obj in obj_found){
-        target_extent <- get_objClass_extent(image2, class2, target_obj)
+        target_extent <- get_objExtent(image2, target_obj)
 
         euc_dist<- euclidean_dist(target_extent$obj_center, search_box$center_pred)
         dist_pred <- append(dist_pred, euc_dist)
@@ -763,7 +763,7 @@ for(scan in (start_scan+1):end_scan){
         next
     }
 
-    pairs <- get_matchPairs(frame1, frame2, class2)
+    pairs <- get_matchPairs(frame1, frame2)
     obj_props <- get_objectProp(frame1, class1, list(x=x, y=y)) #of frame1
 
     if(newRain){                #if this is newRain scan, init ids
