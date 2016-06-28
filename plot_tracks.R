@@ -76,7 +76,7 @@ ntracks <- length(tracks)
 
 #read radar data
 setwd("~/data/darwin_radar/2d/")
-ifile_radar <- "./cpol_2D_0405.nc" #a file for a season
+ifile_radar <- "./cpol_2D_0506.nc" #a file for a season
 ntime <- 1000
 incf_radar <- nc_open(ifile_radar)
 x <- ncvar_get(incf_radar, varid="x")
@@ -113,5 +113,5 @@ for(scan in 1:ntime) {
 
     plot_track(incf_tracks, track_ids)
 }
-}, movie.name = "tracks_trial.gif", interval = 0.5)
+}, movie.name = "tracks_trial_0506.gif", interval = 0.5)
 

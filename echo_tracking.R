@@ -179,6 +179,9 @@ locate_allObjects <- function(image1, image2) {
         obj1_extent <- get_objExtent(image1, obj_id1) #location and radius
         shift <- get_std_flowVector(obj1_extent, image1, image2, flow_margin, stdFlow_mag)
 
+        if(exists("current_objects"))
+            shift <- correct_shift(shift, current_objects, obj_id1)
+
         search_box <- predict_searchExtent(obj1_extent, shift, search_margin)
         search_box <- check_searchBox(search_box, dim(image2)) #search within the image
         obj_found <- find_objects(search_box, image2)  # gives possible candidates
@@ -191,6 +194,19 @@ locate_allObjects <- function(image1, image2) {
 }
 
 
+#' takes in flow vector based shift and current_object dataframe which has last
+#' headings, and check if they are resonably close if not rejects or modify shift and return.
+#' Note:  frame2 of last timestep is now frame1, but current_objects still has it as frame2.
+#' So id2 in the last frame2 are actually ids related to frame1 now.
+correct_shift<-function(this_shift, current_objects, object_id1){
+    last_heads <- c(current_objects$xhead[current_objects$id2==object_id1],
+    current_objects$yhead[current_objects$id2==object_id1])
+
+    #for small shifts and empty last shifts
+    if(is.na(last_heads) || all(last_head<=1 && last_head>=-1))
+        return(this_shift)
+    else return((this_shift+last_heads)/2)
+}
 
 #' Takes in a labeled image and finds the radius, area and the center of the given object.
 get_objExtent <- function(labeled_image, obj_label) {
@@ -438,7 +454,9 @@ euclidean_dist <- function(vec1, vec2){
 
 #' Returns change in size of the eacho as ratio of bigger number to smaller number when given two number, minus 1.
 get_sizeChange<-function(x, y){
-    if(x>=y)
+    if(x < 5 && y <5 ) # if too small, return zero
+        return(0)
+    else if(x>=y)
         return(x/y - 1)
     else
         return(y/x - 1)
@@ -588,7 +606,7 @@ write_survival <- function(outNC, survival_stat, time, scan){
 
 #' Returns a dataframe for objects with unique ids and their corresponding ids in frame1 and frame2.
 #' This function is called when new rainy scan is seen after the period of no rain or the first time.
-init_uids <- function(first_frame, pairs){
+init_uids <- function(first_frame, second_frame, pairs){
     nobj <- max(first_frame) #number of objects in frame1
     objects_mat <- matrix(data = NA, ncol = 4, nrow = nobj)
 
@@ -596,17 +614,52 @@ init_uids <- function(first_frame, pairs){
     objects_mat[, 2] <- next_uid(count = nobj) #unique ids
     objects_mat[, 3] <- as.vector(pairs)#as they are in frame2
     objects_mat[, 4] <-rep(1, nobj)     #observation number for the echo
+
+
+
     current_objects <- data.frame(objects_mat, row.names = NULL)
     colnames(current_objects) <- c("id1", "uid", "id2", "obs_num")
+    current_objects <- attach_xyheads(first_frame, second_frame, current_objects)
     return(current_objects)
 }
+
+
+#' Attaches last xyheads to current objects for future use.
+attach_xyheads <- function(frame1, frame2, current_objects) {
+
+    nobj <- length(current_objects$uid)
+    xhead <- yhead <- NULL
+
+    for (obj in seq(nobj)) {
+        if(current_objects$id1[obj]>0 && current_objects$id2[obj]>0){
+            center1<- get_objectCenter(current_objects$id1[obj], frame1)
+            center2<- get_objectCenter(current_objects$id2[obj], frame2)
+            xhead <- append(xhead, center1[1]-center2[1])
+            yhead <- append(yhead, center1[2]-center2[2])
+        }else{ #if object is dead write NA
+            xhead<-append(xhead, NA)
+            yhead<-append(yhead, NA)
+        }
+    }
+        return(cbind(current_objects, xhead, yhead)) #attach values
+}
+
+
+#' Returns index of center pixel of the given object id from a labeled image.
+get_objectCenter<-function(obj_id, labeled_image){
+    obj_index <- which(labeled_image==obj_id, arr.ind = TRUE)
+    center_x <- floor(median(obj_index[, 1])) #center column
+    center_y <- floor(median(obj_index[, 2])) #center row
+    return(c(center_x, center_y))
+}
+
 
 
 #' Removes dead objects, updates living objects and assign new uids to new born objects.
 #' Also, updates number of valid observations for each echo.
 #' This function is called when rain continues from the last frame.
 #' This is a complicated function to understand.
-update_current_objects <- function(frame1, pairs, old_objects){
+update_current_objects <- function(frame1, frame2, pairs, old_objects){
     nobj <- max(frame1)
     objects_mat <- matrix(data = NA, ncol = 4, nrow = nobj)
 
@@ -627,6 +680,7 @@ update_current_objects <- function(frame1, pairs, old_objects){
 
     current_objects <- data.frame(objects_mat, row.names = NULL)
     colnames(current_objects) <- c("id1", "uid", "id2", "obs_num")
+    current_objects <- attach_xyheads(frame1, frame2, current_objects)
     invisible(current_objects)
 }
 
@@ -695,9 +749,10 @@ survival_stats <- function(pairs, num_obj2) {
 
 #+ echo=TRUE
 #'----------------------- Settings for tracking method ------------------------#
-search_margin <- 5      #pixels
-flow_margin <- 4       #pixels
+search_margin <- 4      #pixels
+flow_margin <- 3       #pixels
 stdFlow_mag <- 4        #fft_flow will not be faster than this
+min_signif_movement <- 2 #not used at this time
 large_num <- 100000     #a very large number
 max_obs<- 100           #longest track that is likely to be recorded
 uid_counter <- 0        #(a global variable) to start uid with 1, count from 0.
@@ -708,9 +763,9 @@ min_size <- 2           #objects smaller than this will be filter
 #+ echo=TRUE, eval=FALSE, warning=FALSE, error=FALSE, message=FALSE
 
 setwd("~/data/darwin_radar/2d/")
-infile_name <- "./cpol_2D_0405.nc" #a file for a season
-#outfile_name <- str_replace(infile_name, ".nc", "_tracks.nc")
-outfile_name <- "~/Desktop/test_trial.nc"
+infile_name <- "./cpol_2D_0506.nc" #a file for a season
+outfile_name <- str_replace(infile_name, ".nc", "_tracks.nc")
+#outfile_name <- "~/Desktop/test_trial.nc"
 print(paste("Opening output file", basename(outfile_name)))
 outNC <- create_outNC(outfile_name, max_obs)
 
@@ -726,7 +781,7 @@ time <- change_baseEpoch(time, From_epoch = as.Date("2004-01-01"))
 
 
 start_scan <- 1
-end_scan <- 25
+end_scan <- length(time) #250
 
 newRain <- TRUE         #is this new rainy scan after dry period?
 
@@ -760,6 +815,9 @@ for(scan in (start_scan+1):end_scan){
         newRain = TRUE          #next rain will be newRain
         write_survival(outNC, survival_stat = rep(0, 3),
                        time = time[scan-1], scan = scan)
+
+        if(exists("current_objects"))
+            rm(current_objects)
         next
     }
 
@@ -767,10 +825,10 @@ for(scan in (start_scan+1):end_scan){
     obj_props <- get_objectProp(frame1, class1, list(x=x, y=y)) #of frame1
 
     if(newRain){                #if this is newRain scan, init ids
-        current_objects <- init_uids(frame1, pairs) #initiate ids and return
+        current_objects <- init_uids(frame1, frame2, pairs) #initiate ids and return
         newRain <- FALSE
     } else {                    #else update old ids
-        current_objects <- update_current_objects(frame1, pairs, current_objects)
+        current_objects <- update_current_objects(frame1, frame2, pairs, current_objects)
     }
     write_update(outNC, current_objects, obj_props, time[scan-1]) #for frame1
 
