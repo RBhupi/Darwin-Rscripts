@@ -1,7 +1,7 @@
 #' ---
 #' title: "Tracking Convection Echoes in CPOL Radar Data"
 #' author: "Bhupendra Raut"
-#' date: "June 2nd, 2016"
+#' date: "August 10, 2016"
 #' ---
 
 #'
@@ -203,10 +203,13 @@ correct_shift<-function(this_shift, current_objects, object_id1){
     current_objects$yhead[current_objects$id2==object_id1])
 
     #for small shifts and empty last shifts
-    if(is.na(last_heads) || all(last_head<=1 && last_head>=-1))
+    if(is.na(last_heads) || all(last_heads<=1 && last_heads>=-1, na.rm = TRUE))
         return(this_shift)
-    else return((this_shift+last_heads)/2)
+    else if(any(abs(this_shift-last_heads)>4))  #if they are too different
+        return(last_heads)                      #then trust last_heads
+    else return((this_shift+last_heads)/2) #else retun the average of both
 }
+
 
 #' Takes in a labeled image and finds the radius, area and the center of the given object.
 get_objExtent <- function(labeled_image, obj_label) {
@@ -220,7 +223,8 @@ get_objExtent <- function(labeled_image, obj_label) {
     obj_center <- c(min(obj_index[, 1])+obj_radius, min(obj_index[, 2]) + obj_radius)
     obj_area <- length(obj_index[, 1])  #size in pixels
 
-    obj_extent<-list(obj_center=obj_center, obj_radius=obj_radius, obj_area=obj_area)
+    obj_extent<-list(obj_center=obj_center, obj_radius=obj_radius,
+                     obj_area=obj_area, obj_index=obj_index)
     return(obj_extent)
 }
 
@@ -440,6 +444,8 @@ get_disparity <- function(obj_found, image2, search_box, obj1_extent) {
         dist_actual <- append(dist_actual, euc_dist)
         size_changed <- get_sizeChange(target_extent$obj_area, obj1_extent$obj_area) #change in size
         change <- append(change, size_changed)
+
+        overlap <- obj_overlap(target_extent$obj_index, obj1_extent$obj_index)
     }
     disparity <- dist_pred + change
     return(disparity)
@@ -452,7 +458,8 @@ euclidean_dist <- function(vec1, vec2){
 }
 
 
-#' Returns change in size of the eacho as ratio of bigger number to smaller number when given two number, minus 1.
+#' Returns change in size of the eacho as ratio of bigger number to smaller
+#' number when given two number, minus 1.
 get_sizeChange<-function(x, y){
     if(x < 5 && y <5 ) # if too small, return zero
         return(0)
@@ -460,6 +467,19 @@ get_sizeChange<-function(x, y){
         return(x/y - 1)
     else
         return(y/x - 1)
+}
+
+
+#'
+obj_overlap <- function(obj1_index, obj2_index){
+    count <- 0
+    npix2<- length(obj2_index[, 1])
+
+    for(i in seq(npix2)){
+        which(obj1_index[, 1]==obj2_index[i, 1], arr.ind = TRUE) #matching row indices
+
+    }
+
 }
 
 
@@ -751,10 +771,10 @@ survival_stats <- function(pairs, num_obj2) {
 #'----------------------- Settings for tracking method ------------------------#
 search_margin <- 4      #pixels
 flow_margin <- 3       #pixels
-stdFlow_mag <- 4        #fft_flow will not be faster than this
+stdFlow_mag <- 5        #fft_flow will not be faster than this
 min_signif_movement <- 2 #not used at this time
 large_num <- 100000     #a very large number
-max_obs<- 100           #longest track that is likely to be recorded
+max_obs<- 60           #longest track that is likely to be recorded
 uid_counter <- 0        #(a global variable) to start uid with 1, count from 0.
 min_size <- 2           #objects smaller than this will be filter
 #==============================================================================#
@@ -763,101 +783,104 @@ min_size <- 2           #objects smaller than this will be filter
 #+ echo=TRUE, eval=FALSE, warning=FALSE, error=FALSE, message=FALSE
 
 setwd("~/data/darwin_radar/2d/")
-infile_name <- "./cpol_2D_0506.nc" #a file for a season
-outfile_name <- str_replace(infile_name, ".nc", "_tracks.nc")
-#outfile_name <- "~/Desktop/test_trial.nc"
-print(paste("Opening output file", basename(outfile_name)))
-outNC <- create_outNC(outfile_name, max_obs)
+file_list <- Sys.glob(paths = "./cpol_2D_????.nc")
+
+for(infile_name in file_list){
+    outfile_name <- str_replace(infile_name, ".nc", "_tracks_V16_8.nc")
+    #outfile_name <- paste("../tracks/", basename(outfile_name), sep="")
+    print(paste("Opening output file", outfile_name))
+    outNC <- create_outNC(outfile_name, max_obs)
 
 
-#read x, y and time from the file
-ncfile <- nc_open(infile_name)
-x <- ncvar_get(ncfile, varid = "x")
-y <- ncvar_get(ncfile, varid = "y")
+    #read x, y and time from the file
+    ncfile <- nc_open(infile_name)
+    x <- ncvar_get(ncfile, varid = "x")
+    y <- ncvar_get(ncfile, varid = "y")
 
 
-time <- ncvar_get(ncfile, varid="time")
-time <- change_baseEpoch(time, From_epoch = as.Date("2004-01-01"))
+    time <- ncvar_get(ncfile, varid="time")
+    time <- change_baseEpoch(time, From_epoch = as.Date("2004-01-01"))
 
 
-start_scan <- 1
-end_scan <- length(time) #250
+    start_scan <- 1
+    end_scan <- length(time)
 
-newRain <- TRUE         #is this new rainy scan after dry period?
+    newRain <- TRUE         #is this new rainy scan after dry period?
 
-print(paste("Total scans in this file", end_scan-start_scan+1))
-pb = txtProgressBar(min =start_scan, max = end_scan, initial = 1, style = 3) #progress bar
+    print(paste("Total scans in this file", end_scan-start_scan+1))
+    pb = txtProgressBar(min =start_scan, max = end_scan, initial = 1, style = 3) #progress bar
 
-#' To continuousely track the echoes in the images,
-#' we read the first frame and save it in to frame2 then in the loop,
-#' this frame will be copied to frame1 and next frame will be frame2.
-#'
-#' frame1 <-- frame2 <-- new frame  (repeat)
-#+ echo=TRUE, eval=FALSE, warning=FALSE, error=FALSE, message=FALSE
-frame2 <- get_filteredFrame(ncfile, start_scan, min_size)
-class2 <- get_classFrame(ncfile, start_scan) #classifictaion
+    #' To continuousely track the echoes in the images,
+    #' we read the first frame and save it in to frame2 then in the loop,
+    #' this frame will be copied to frame1 and next frame will be frame2.
+    #'
+    #' frame1 <-- frame2 <-- new frame  (repeat)
+    #+ echo=TRUE, eval=FALSE, warning=FALSE, error=FALSE, message=FALSE
+    frame2 <- get_filteredFrame(ncfile, start_scan, min_size)
+    class2 <- get_classFrame(ncfile, start_scan) #classifictaion
 
-for(scan in (start_scan+1):end_scan){
-    setTxtProgressBar(pb, scan) #progress bar
+    for(scan in (start_scan+1):end_scan){
+        setTxtProgressBar(pb, scan) #progress bar
 
-    frame1 <- frame2
-    class1 <- class2
-    frame2 <- get_filteredFrame(ncfile, scan, min_size)
-    class2 <- get_classFrame(ncfile, scan)
+        frame1 <- frame2
+        class1 <- class2
+        frame2 <- get_filteredFrame(ncfile, scan, min_size)
+        class2 <- get_classFrame(ncfile, scan)
 
-    if(scan==end_scan){ #if this is the last scan make it zero.
-        frame2 <- replace(frame2, frame2>0, 0)
-    }
+        if(scan==end_scan){ #if this is the last scan make it zero.
+            frame2 <- replace(frame2, frame2>0, 0)
+        }
 
 
-    #skip if no echoes in frame 1
-    if(max(frame1, na.rm = TRUE)==0){         #if no echoes in frame1
-        newRain = TRUE          #next rain will be newRain
-        write_survival(outNC, survival_stat = rep(0, 3),
+        #skip if no echoes in frame 1
+        if(max(frame1, na.rm = TRUE)==0){         #if no echoes in frame1
+            newRain = TRUE          #next rain will be newRain
+            write_survival(outNC, survival_stat = rep(0, 3),
+                           time = time[scan-1], scan = scan)
+
+            if(exists("current_objects"))
+                rm(current_objects)
+            next
+        }
+
+        pairs <- get_matchPairs(frame1, frame2)
+        obj_props <- get_objectProp(frame1, class1, list(x=x, y=y)) #of frame1
+
+        if(newRain){                #if this is newRain scan, init ids
+            current_objects <- init_uids(frame1, frame2, pairs) #initiate ids and return
+            newRain <- FALSE
+        } else {                    #else update old ids
+            current_objects <- update_current_objects(frame1, frame2, pairs, current_objects)
+        }
+        write_update(outNC, current_objects, obj_props, time[scan-1]) #for frame1
+
+        #Survival is from frame1 to frame2
+        num_obj2 <- max(frame2)
+        obj_survival <- survival_stats(pairs, num_obj2)
+        write_survival(outNC, survival_stat = obj_survival,
                        time = time[scan-1], scan = scan)
-
-        if(exists("current_objects"))
-            rm(current_objects)
-        next
     }
 
-    pairs <- get_matchPairs(frame1, frame2)
-    obj_props <- get_objectProp(frame1, class1, list(x=x, y=y)) #of frame1
 
-    if(newRain){                #if this is newRain scan, init ids
-        current_objects <- init_uids(frame1, frame2, pairs) #initiate ids and return
-        newRain <- FALSE
-    } else {                    #else update old ids
-        current_objects <- update_current_objects(frame1, frame2, pairs, current_objects)
-    }
-    write_update(outNC, current_objects, obj_props, time[scan-1]) #for frame1
+    cat("\n") #new line required for progress bar
 
-    #Survival is from frame1 to frame2
-    num_obj2 <- max(frame2)
-    obj_survival <- survival_stats(pairs, num_obj2)
-    write_survival(outNC, survival_stat = obj_survival,
-                   time = time[scan-1], scan = scan)
-}
+    print("closing files")
+    nc_close(ncfile)
+    #write unlimited dim and close
+    ncvar_put(outNC, varid = "echo_id", vals = seq(uid_counter), start = 1, count = uid_counter)
+    nc_close(outNC)
 
+    # Stop the clock and print the time elapsed
+    time_elapsed <- (proc.time() - start_time)
+    print(paste("time elapsed", round(time_elapsed[3]/60), "minutes"))
 
-cat("\n") #new line required for progress bar
-
-print("closing files")
-nc_close(ncfile)
-#write unlimited dim and close
-ncvar_put(outNC, varid = "echo_id", vals = seq(uid_counter), start = 1, count = uid_counter)
-nc_close(outNC)
-
-# Stop the clock and print the time elapsed
-time_elapsed <- (proc.time() - start_time)
-print(paste("time elapsed", round(time_elapsed[3]/60), "minutes"))
-
+}#file loop end
 
 
 #+ echo=FALSE, eval=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.width=9, fig.height=9, fig.cap="Function call graph"
-library(RColorBrewer)
-library(mvbutils)
-foodweb(border = TRUE, boxcolor = "skyblue", textcolor = "black", cex = 0.8, lwd=2)
+#library(RColorBrewer)
+#library(mvbutils)
+#foodweb(border = TRUE, boxcolor = "skyblue", textcolor = "black", cex = 0.8, lwd=2)
 
 #'Run following command to generate documentation
 #'
