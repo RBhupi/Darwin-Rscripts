@@ -153,7 +153,7 @@ match_pairs <- function(obj_match) {
     pairs <- as.vector(pairs)
     ## remove bad matching
     for(pair in 1:length(pairs)){
-        if(obj_match[pair, pairs[pair]] >10){
+        if(obj_match[pair, pairs[pair]] > max_desparity){
             pairs[pair] <- 0
         }
     }
@@ -403,10 +403,9 @@ get_disparity_all <- function(obj_found, image2, search_box, obj1_extent) {
 
         if(length(obj_found)==1){ # if this is the only object
             disparity <- get_disparity(obj_found, image2, search_box, obj1_extent)
-            if(disparity < 5) disparity <- 0 #lower the disparity if not too large
-            else disparity <- disparity-5  #make this a global setting variable
+            if(disparity <= 2) disparity <- 0 #lower the disparity if not too large
 
-        } else { # when more than one objects
+        } else { # when more than one objects to match
             disparity <- get_disparity(obj_found, image2, search_box, obj1_extent)
         }
     }
@@ -417,7 +416,7 @@ get_disparity_all <- function(obj_found, image2, search_box, obj1_extent) {
 #' If disparity is large then it saves a large number for the value to reduce
 #' the chances of this pairing to zero, else it save the value in the obj_match array.
 save_objMatch <- function(obj_id1, obj_found, disparity, obj_match) {
-    if(disparity >15 || is.na(disparity)){
+    if(disparity > max_desparity || is.na(disparity)){
         obj_match[obj_id1, obj_found] <- large_num
     } else {
         obj_match[obj_id1, obj_found] <- disparity
@@ -429,7 +428,6 @@ save_objMatch <- function(obj_id1, obj_found, disparity, obj_match) {
 #' Computes disparity for a single object. Check how it is computed for detail.
 #' This parameter has most effect on the acccuracy of the tracks.
 #'
-#' ToDo: Should I use ratio of size or difference in size for disparity?
 get_disparity <- function(obj_found, image2, search_box, obj1_extent) {
     dist_pred <- c(NULL)
     dist_actual <- c(NULL)
@@ -445,9 +443,11 @@ get_disparity <- function(obj_found, image2, search_box, obj1_extent) {
         size_changed <- get_sizeChange(target_extent$obj_area, obj1_extent$obj_area) #change in size
         change <- append(change, size_changed)
 
-        overlap <- obj_overlap(target_extent$obj_index, obj1_extent$obj_index)
+        #overlap <- obj_overlap(target_extent$obj_index, obj1_extent$obj_index)
     }
-    disparity <- dist_pred + change
+
+    #This is crucial parameter that affect the results
+    disparity <- dist_pred + change # + dist_actual
     return(disparity)
 }
 
@@ -470,17 +470,6 @@ get_sizeChange<-function(x, y){
 }
 
 
-#'
-obj_overlap <- function(obj1_index, obj2_index){
-    count <- 0
-    npix2<- length(obj2_index[, 1])
-
-    for(i in seq(npix2)){
-        which(obj1_index[, 1]==obj2_index[i, 1], arr.ind = TRUE) #matching row indices
-
-    }
-
-}
 
 
 #' Creates output netcdf file for radar echo tracjecories. This is the longest function.
@@ -510,6 +499,9 @@ create_outNC <- function(ofile, max_obs) {
     var_dur <- ncvar_def("duration", units = "", longname = "duration of echo in time-steps",
                          dim=dim_echo, missval = -999, prec="integer",
                          compression = deflat, shuffle = TRUE)
+
+    var_parent <- ncvar_def("parent", units="", longname = "id of the parent echo",
+                            dim=dim_echo, missval = 0, prec = "integer")
 
     var_time <- ncvar_def("record_time", units = "seconds since 1970-01-01 00:00:00 UTC",
                           longname = "time of the scan for each record",
@@ -549,7 +541,7 @@ create_outNC <- function(ofile, max_obs) {
                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer",
                          compression = deflat, shuffle = TRUE)
 
-    var_list <- list(var_time, var_survival, var_dur, var_xdist, var_ydist,
+    var_list <- list(var_time, var_survival, var_dur, var_parent, var_xdist, var_ydist,
                      var_x, var_y, var_npix, var_ncg, var_ncb, var_nco)
 
 
@@ -559,7 +551,7 @@ create_outNC <- function(ofile, max_obs) {
     ncatt_put(outNC, varid = "echo_id", attname = "cf_role", attval = "trajectory_id")
     ncatt_put(outNC, varid = 0, attname = "featureType", attval = "trajectory")
 
-    description <- paste("The CPOL radar echoes of convective types were separated using Steiner classification scheme and tracked.")
+    description <- paste("The CPOL radar echoes of convective types were separated using Steiner classification scheme and tracked. Added 'parent' variable.")
 
     ncatt_put(outNC, varid = 0, attname = "_description",
               attval = description, prec = "text")
@@ -608,6 +600,8 @@ write_duration <- function(outNC, current_objects){
         if(current_objects$id2[obj]==0){
             ncvar_put(outNC, varid = "duration", current_objects$obs_num[obj],
                       start=current_objects$uid[obj], count=1)
+            ncvar_put(outNC, varid = "parent", current_objects$parent[obj],
+                      start=current_objects$uid[obj], count=1)
         }
     }
 }
@@ -628,17 +622,18 @@ write_survival <- function(outNC, survival_stat, time, scan){
 #' This function is called when new rainy scan is seen after the period of no rain or the first time.
 init_uids <- function(first_frame, second_frame, pairs){
     nobj <- max(first_frame) #number of objects in frame1
-    objects_mat <- matrix(data = NA, ncol = 4, nrow = nobj)
+    objects_mat <- matrix(data = NA, ncol = 5, nrow = nobj)
 
     objects_mat[, 1] <- seq(nobj)               #id1
     objects_mat[, 2] <- next_uid(count = nobj) #unique ids
     objects_mat[, 3] <- as.vector(pairs)#as they are in frame2
     objects_mat[, 4] <-rep(1, nobj)     #observation number for the echo
+    objects_mat[, 5] <-rep(0, nobj)
 
 
 
     current_objects <- data.frame(objects_mat, row.names = NULL)
-    colnames(current_objects) <- c("id1", "uid", "id2", "obs_num")
+    colnames(current_objects) <- c("id1", "uid", "id2", "obs_num", "parent")
     current_objects <- attach_xyheads(first_frame, second_frame, current_objects)
     return(current_objects)
 }
@@ -674,14 +669,43 @@ get_objectCenter<-function(obj_id, labeled_image){
 }
 
 
-
+#'
 #' Removes dead objects, updates living objects and assign new uids to new born objects.
 #' Also, updates number of valid observations for each echo.
 #' This function is called when rain continues from the last frame.
 #' This is a complicated function to understand.
+#'
+#' See how the pairs vector looks like for a real case. The pairs
+#' shows mapping of the current frame1 and frame2. This shows that frame2 has 4 objects.
+#' The objects [1, 2, 3, 4] in current frame2 are mapped with objects [0, 1, 2, 3]
+#' in current frame1. Thus, object 1 in frame2 is new born. Others can be traced back to
+#' frame1.
+#'
+#' pairs>>
+#'
+#' 0, 1, 2, 3
+#'
+#' Now check old_objects and remember that at this instant, id2 (in the old_objects)
+#' correspond to the objects in current frame1 which was frame2 in the earlier
+#' time-step, and that they are the same frame.
+#'
+#' old_objects>>
+#'
+#' id1, uid, id2, obs_num, xhead, yhead
+#'
+#'  1, 1, 1,   2,   1,  0
+#'
+#'  2,  12,  3, 2, 0,  -1
+#'
+#' So the object 1 and 3 in current frame1 (earlier it was frame2 with id2) existed
+#' before and has "uid" (11 and 12). We will copy their "uid" to our object_matrix
+#' and increament the observation number (obs_num).
+#' For object 2 and 4 in current frame2 which do not exist in frame1,
+#' we will ask for new uids. This information will be written  in
+#' current_objects and return for writting in to the output file.
 update_current_objects <- function(frame1, frame2, pairs, old_objects){
     nobj <- max(frame1)
-    objects_mat <- matrix(data = NA, ncol = 4, nrow = nobj)
+    objects_mat <- matrix(data = NA, ncol = 5, nrow = nobj)
 
     objects_mat[, 1] <- seq(nobj) # this is id1 at current step
 
@@ -690,19 +714,101 @@ update_current_objects <- function(frame1, frame2, pairs, old_objects){
             # so they should get same uid as last time
             objects_mat[obj, 2] <- old_objects$uid[old_objects$id2==obj]
             objects_mat[obj, 4] <- old_objects$obs_num[old_objects$id2==obj] + 1
+            objects_mat[obj, 5] <- old_objects$parent[old_objects$id2==obj]
         } else {
             objects_mat[obj, 2] <- next_uid()
             objects_mat[obj, 4] <- 1 #first observation of the echo
+            objects_mat[obj, 5] <- get_parent_uid(obj, frame1, old_objects)
         }
     }
 
     objects_mat[, 3] <- as.vector(pairs) #match as they are in frame2
 
     current_objects <- data.frame(objects_mat, row.names = NULL)
-    colnames(current_objects) <- c("id1", "uid", "id2", "obs_num")
+    colnames(current_objects) <- c("id1", "uid", "id2", "obs_num", "parent")
     current_objects <- attach_xyheads(frame1, frame2, current_objects)
     invisible(current_objects)
 }
+
+
+#' returns unique id of the parent (or zero) for given object in frame1.
+#' Also remember that old object id2 is actual id1 in frame1, as we still have
+#' to update the object_ids.
+get_parent_uid<-function(obj, frame1, old_objects){
+    parent_id <- find_parent(obj, frame1)
+    if (parent_id==0) return(0)
+
+    parent_index <- which(old_objects$id2==parent_id)
+
+    # If it is first observation of the object then it will not be recorded in
+    # old_objects$id2, ans it will not be suitable as the parent.
+    if(!(parent_id %in% old_objects$id2)) return(0)
+
+    parent_uid <- old_objects$uid[parent_index]
+    return(parent_uid)
+}
+
+
+#' This function checks near by objects in the frame for the given new-born object.
+find_parent <- function(id1_newObj, frame1){
+    if(max(frame1)==1) return(0) # If there is only one object, then dont look for parent
+
+    #get length and indices of the given object pixels
+    object_ind <- which(frame1==id1_newObj, arr.ind = TRUE)
+    object_size <- length(object_ind[,1])
+
+    #Do this for all other objects in the frame
+    neighbour_ind <- which(frame1>0 & frame1!=id1_newObj, arr.ind = T)
+    neighbour_size <- length(neighbour_ind[, 1])
+
+    #make empty vectors
+    neighbour_dist <- NULL
+    neighbour_id <- NULL
+    size_ratio <- NULL
+    size_diff <- NULL
+
+    # We are chekcing for all object pixels and finding the nearest pixel.
+    for(pix in seq(object_size)){
+        for(neighbour in seq(neighbour_size)){
+            euc_dist <- euclidean_dist(as.vector(object_ind[pix, ]),
+                                       as.vector(neighbour_ind[neighbour, ]))
+            neighbour_dist <- append(neighbour_dist, euc_dist)
+
+            pix_id <- as.vector(neighbour_ind[neighbour, ])
+            neighbour_id <- append(neighbour_id, frame1[pix_id[1], pix_id[2]])
+        }
+    }
+
+    nearest_object_id <- neighbour_id[which(neighbour_dist<4)]
+    the_nearest_object <- neighbour_id[which(neighbour_dist==min(neighbour_dist))]
+
+    if (is.empty(nearest_object_id)) #if no close neighbour return 0
+        return(0)
+
+    # This is to take care of multiple objects in the neighbouring region.
+    neigh_objects <- unique(nearest_object_id)
+    for(object in neigh_objects){
+        nearest_object_size <- length(frame1[frame1==object])
+        size_ratio <- append(size_ratio, nearest_object_size/object_size)
+        size_diff <- append(size_diff, nearest_object_size - object_size)
+    }
+
+    # id of the object which has max size_ratio
+    big_ratio_obj <- neigh_objects[which(size_ratio==max(size_ratio))]
+    big_diff_obj  <- neigh_objects[which(size_diff==max(size_diff))]
+
+    #if both are same call it the parent
+    if(big_ratio_obj==big_diff_obj)
+        return(big_diff_obj[1])
+    else
+        return(big_diff_obj[1])
+    # NOTE: 1. At this time we are calling big_diff_obj as parent in all the situations.
+    # This looks like good a first guess. But if needed we can make it more
+    # complex and use ratio and size_diff as cost function.
+    # 2. We are not considering the possibility of multiple potential parents
+    # beyond this point.
+}
+
 
 
 #' Returns sequence of next unique ids and increament the uid_counter.
@@ -769,14 +875,14 @@ survival_stats <- function(pairs, num_obj2) {
 
 #+ echo=TRUE
 #'----------------------- Settings for tracking method ------------------------#
-search_margin <- 4      #pixels
-flow_margin <- 3       #pixels
-stdFlow_mag <- 5        #fft_flow will not be faster than this
-min_signif_movement <- 2 #not used at this time
-large_num <- 100000     #a very large number
-max_obs<- 60           #longest track that is likely to be recorded
-uid_counter <- 0        #(a global variable) to start uid with 1, count from 0.
-min_size <- 2           #objects smaller than this will be filter
+search_margin <- 4          #pixels
+flow_margin <- 3            #pixels
+stdFlow_mag <- 5            #fft_flow will not be faster than this
+min_signif_movement <- 2    #not used at this time
+large_num <- 1000           #a large number
+max_obs<- 60                #longest recoreded track (eles show error).
+min_size <- 2               #objects smaller than this will be filter
+max_desparity <- 15         # two objects with more desparity than this value, are not same.
 #==============================================================================#
 
 #'Here we call the above functions to track convective echoes in the subsequent images.
@@ -786,11 +892,11 @@ setwd("~/data/darwin_radar/2d/")
 file_list <- Sys.glob(paths = "./cpol_2D_????.nc")
 
 for(infile_name in file_list){
-    outfile_name <- str_replace(infile_name, ".nc", "_tracks_V16_8.nc")
+    outfile_name <- str_replace(infile_name, ".nc", "_tracks_V16_9.nc")
     #outfile_name <- paste("../tracks/", basename(outfile_name), sep="")
     print(paste("Opening output file", outfile_name))
     outNC <- create_outNC(outfile_name, max_obs)
-
+    uid_counter <- 0            #(a global variable) to start uid with 1, count from 0.
 
     #read x, y and time from the file
     ncfile <- nc_open(infile_name)
