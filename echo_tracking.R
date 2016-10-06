@@ -15,8 +15,10 @@
 #' Hungarian method. For the object pairs with large disparity, we assumed that the old object is dead in frame1
 #' and the new object was born in frame2.
 #'
-#' The unique identity numbers are produced for new objects and was kept constant through out the life of that object.
-#' No merging or spliting ia taken care of in this version of the code.
+#' 1. The unique identity numbers are produced for new objects and was kept
+#' constant through out the life of that object.
+#' 2. All the distances used for tracking are in pixels, hence this code can be
+#' customised for newer problems of similar kind.
 #'
 #'
 #'
@@ -500,8 +502,12 @@ create_outNC <- function(ofile, max_obs) {
                          dim=dim_echo, missval = -999, prec="integer",
                          compression = deflat, shuffle = TRUE)
 
-    var_parent <- ncvar_def("parent", units="", longname = "id of the parent echo",
+    var_origin <- ncvar_def("origin", units="", longname = "id from which the echo split up.",
                             dim=dim_echo, missval = 0, prec = "integer")
+
+    var_merged <- ncvar_def("merged", units="", longname = "id in which the echo merged.",
+                            dim=dim_echo, missval = 0, prec = "integer")
+
 
     var_time <- ncvar_def("record_time", units = "seconds since 1970-01-01 00:00:00 UTC",
                           longname = "time of the scan for each record",
@@ -541,7 +547,7 @@ create_outNC <- function(ofile, max_obs) {
                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer",
                          compression = deflat, shuffle = TRUE)
 
-    var_list <- list(var_time, var_survival, var_dur, var_parent, var_xdist, var_ydist,
+    var_list <- list(var_time, var_survival, var_dur, var_origin, var_merged, var_xdist, var_ydist,
                      var_x, var_y, var_npix, var_ncg, var_ncb, var_nco)
 
 
@@ -551,7 +557,8 @@ create_outNC <- function(ofile, max_obs) {
     ncatt_put(outNC, varid = "echo_id", attname = "cf_role", attval = "trajectory_id")
     ncatt_put(outNC, varid = 0, attname = "featureType", attval = "trajectory")
 
-    description <- paste("The CPOL radar echoes of convective types were separated using Steiner classification scheme and tracked. Added 'parent' variable.")
+    description <- paste("The CPOL radar echoes of convective types were separated using Steiner classification scheme and tracked.",
+                         "Merging and splitting is added with echo ids.")
 
     ncatt_put(outNC, varid = 0, attname = "_description",
               attval = description, prec = "text")
@@ -568,7 +575,7 @@ create_outNC <- function(ofile, max_obs) {
 
 #' Writes properties and uids for all objects into output netcdf file.
 write_update<-function(outNC, current_objects, obj_props, obs_time){
-    nobj <- length(current_objects$id1)
+    nobj <- length(current_objects$id1) #num of objects in frame1
 
     for(object in seq(nobj)){
         nc_start <- c(current_objects$obs_num[object], current_objects$uid[object])
@@ -600,10 +607,51 @@ write_duration <- function(outNC, current_objects){
         if(current_objects$id2[obj]==0){
             ncvar_put(outNC, varid = "duration", current_objects$obs_num[obj],
                       start=current_objects$uid[obj], count=1)
-            ncvar_put(outNC, varid = "parent", current_objects$parent[obj],
+            ncvar_put(outNC, varid = "origin", current_objects$origin[obj],
+                      start=current_objects$uid[obj], count=1)
+
+            #check for merging
+            merged_in <- check_merging(obj, current_objects, obj_props)
+            ncvar_put(outNC, varid="merged", merged_in,
                       start=current_objects$uid[obj], count=1)
         }
     }
+}
+
+#'This function takes in two R-lists containing information about current objects
+#' in the frame1 and their properties, such as center location and area. If the
+#' I am using an arbitrary crieterion for merging. If the E. distance between centers
+#' of the two objects c_dist < or = to r=sqrt(area), then they merged. Here, if we
+#' assume square objects, then the r is length of a side of the square.
+check_merging<-function(dead_obj_id1, current_objects, object_props){
+    nobj_frame1 <- length(current_objects$id1)
+    c_dist_all <- NULL
+    checked_id1 <- NULL
+
+    #' If all objects are dead in frame2 then no merging happened.
+    if(all(current_objects$id2==0)) return(0)
+
+    for(check_obj in seq(nobj_frame1)){
+        # skip checking dead objects of frame2
+        if(current_objects$id2[check_obj]!=0){
+            dead_xy <- c(obj_props$x[dead_obj_id1], obj_props$y[dead_obj_id1])
+            merge_xy <- c(obj_props$x[check_obj], obj_props$y[check_obj])
+            c_dist <- euclidean_dist(merge_xy, dead_xy)
+            if(c_dist < sqrt(object_props$area[check_obj])){
+                c_dist_all <-append(c_dist_all, c_dist)
+                checked_id1 <- append(checked_id1, check_obj)
+            }
+
+        }
+    }
+    #if this is null, then no merging, else nearest object is the product of merging.
+    if(is.null(c_dist_all)) return(0)
+    else {
+        product_id1 <- checked_id1[which(c_dist_all==min(c_dist_all))]
+        return(current_objects$uid[product_id1])
+    }
+
+
 }
 
 
@@ -633,7 +681,7 @@ init_uids <- function(first_frame, second_frame, pairs){
 
 
     current_objects <- data.frame(objects_mat, row.names = NULL)
-    colnames(current_objects) <- c("id1", "uid", "id2", "obs_num", "parent")
+    colnames(current_objects) <- c("id1", "uid", "id2", "obs_num", "origin")
     current_objects <- attach_xyheads(first_frame, second_frame, current_objects)
     return(current_objects)
 }
@@ -714,44 +762,46 @@ update_current_objects <- function(frame1, frame2, pairs, old_objects){
             # so they should get same uid as last time
             objects_mat[obj, 2] <- old_objects$uid[old_objects$id2==obj]
             objects_mat[obj, 4] <- old_objects$obs_num[old_objects$id2==obj] + 1
-            objects_mat[obj, 5] <- old_objects$parent[old_objects$id2==obj]
+            objects_mat[obj, 5] <- old_objects$origin[old_objects$id2==obj]
         } else {
             objects_mat[obj, 2] <- next_uid()
             objects_mat[obj, 4] <- 1 #first observation of the echo
-            objects_mat[obj, 5] <- get_parent_uid(obj, frame1, old_objects)
+            objects_mat[obj, 5] <- get_origin_uid(obj, frame1, old_objects)
         }
     }
 
     objects_mat[, 3] <- as.vector(pairs) #match as they are in frame2
 
     current_objects <- data.frame(objects_mat, row.names = NULL)
-    colnames(current_objects) <- c("id1", "uid", "id2", "obs_num", "parent")
+    colnames(current_objects) <- c("id1", "uid", "id2", "obs_num", "origin")
     current_objects <- attach_xyheads(frame1, frame2, current_objects)
     invisible(current_objects)
 }
 
 
-#' returns unique id of the parent (or zero) for given object in frame1.
+#' returns unique id of the origin (or zero) for given object in frame1.
 #' Also remember that old object id2 is actual id1 in frame1, as we still have
 #' to update the object_ids.
-get_parent_uid<-function(obj, frame1, old_objects){
-    parent_id <- find_parent(obj, frame1)
-    if (parent_id==0) return(0)
+get_origin_uid<-function(obj, frame1, old_objects){
+    origin_id <- find_origin(obj, frame1)
+    if (origin_id==0) return(0)
 
-    parent_index <- which(old_objects$id2==parent_id)
+    origin_index <- which(old_objects$id2==origin_id)
 
     # If it is first observation of the object then it will not be recorded in
-    # old_objects$id2, ans it will not be suitable as the parent.
-    if(!(parent_id %in% old_objects$id2)) return(0)
+    # old_objects$id2, ans it will not be suitable as the origin.
+    if(!(origin_id %in% old_objects$id2)) return(0)
 
-    parent_uid <- old_objects$uid[parent_index]
-    return(parent_uid)
+    origin_uid <- old_objects$uid[origin_index]
+    return(origin_uid)
 }
 
 
 #' This function checks near by objects in the frame for the given new-born object.
-find_parent <- function(id1_newObj, frame1){
-    if(max(frame1)==1) return(0) # If there is only one object, then dont look for parent
+#' origin is an object which existed before the new born objects,
+#' has comparable or larger size and is close enough to the offspring.
+find_origin <- function(id1_newObj, frame1){
+    if(max(frame1)==1) return(0) # If there is only one object, then dont look for origin
 
     #get length and indices of the given object pixels
     object_ind <- which(frame1==id1_newObj, arr.ind = TRUE)
@@ -797,18 +847,17 @@ find_parent <- function(id1_newObj, frame1){
     big_ratio_obj <- neigh_objects[which(size_ratio==max(size_ratio))]
     big_diff_obj  <- neigh_objects[which(size_diff==max(size_diff))]
 
-    #if both are same call it the parent
+    #if both are same call it the origin
     if(big_ratio_obj==big_diff_obj)
         return(big_diff_obj[1])
     else
         return(big_diff_obj[1])
-    # NOTE: 1. At this time we are calling big_diff_obj as parent in all the situations.
+    # NOTE: 1. At this time we are calling big_diff_obj as origin in all the situations.
     # This looks like good a first guess. But if needed we can make it more
     # complex and use ratio and size_diff as cost function.
-    # 2. We are not considering the possibility of multiple potential parents
+    # 2. We are not considering the possibility of multiple potential origins
     # beyond this point.
 }
-
 
 
 #' Returns sequence of next unique ids and increament the uid_counter.
@@ -873,6 +922,7 @@ survival_stats <- function(pairs, num_obj2) {
 #+ echo=FALSE
 #==============================================================================#
 
+
 #+ echo=TRUE
 #'----------------------- Settings for tracking method ------------------------#
 search_margin <- 4          #pixels
@@ -892,7 +942,7 @@ setwd("~/data/darwin_radar/2d/")
 file_list <- Sys.glob(paths = "./cpol_2D_????.nc")
 
 for(infile_name in file_list){
-    outfile_name <- str_replace(infile_name, ".nc", "_tracks_V16_9.nc")
+    outfile_name <- str_replace(infile_name, ".nc", "_tracks_test.nc") #V16_9.nc")
     #outfile_name <- paste("../tracks/", basename(outfile_name), sep="")
     print(paste("Opening output file", outfile_name))
     outNC <- create_outNC(outfile_name, max_obs)
@@ -909,7 +959,7 @@ for(infile_name in file_list){
 
 
     start_scan <- 1
-    end_scan <- length(time)
+    end_scan <- 500 #length(time)
 
     newRain <- TRUE         #is this new rainy scan after dry period?
 
