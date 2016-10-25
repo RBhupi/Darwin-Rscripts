@@ -1,7 +1,7 @@
 #' ---
 #' title: "Tracking Convection Echoes in CPOL Radar Data"
 #' author: "Bhupendra Raut"
-#' date: "August 10, 2016"
+#' date: "October 06, 2016"
 #' ---
 
 #'
@@ -19,6 +19,9 @@
 #' constant through out the life of that object.
 #' 2. All the distances used for tracking are in pixels, hence this code can be
 #' customised for newer problems of similar kind.
+#' 3. Splitting/Merging is considered in this version.
+#' Uid of the origin/product echos written in arrays named `origin' and `merged'.
+#'
 #'
 #'
 #'
@@ -40,10 +43,10 @@ library(stringr)  #string manipulations
 library(clue)     #solve_LSAP() assignment problem
 
 #+ echo=FALSE
-#----------------------------------------------------------------------fucntions
+#----------------------------------------------------------------------functions
 
 #' Plots image with objects labels. This is used to test images when processed 1-by-1.
-plot_objects_label<-function(labeled_image, xvalues, yvalues){
+plot_objects_label <- function(labeled_image, xvalues, yvalues){
     image2D(replace(labeled_image, labeled_image==0, NA), x=xvalues, y=yvalues)
     grid()
 
@@ -153,7 +156,7 @@ get_matchPairs <- function(image1, image2) {
 match_pairs <- function(obj_match) {
     pairs <- solve_LSAP(obj_match)
     pairs <- as.vector(pairs)
-    ## remove bad matching
+    # remove bad matching
     for(pair in 1:length(pairs)){
         if(obj_match[pair, pairs[pair]] > max_desparity){
             pairs[pair] <- 0
@@ -176,7 +179,7 @@ locate_allObjects <- function(image1, image2) {
 
     obj_match <- matrix(large_num, nrow = nObjects1, ncol = max(nObjects1, nObjects2))
 
-    ## here we match each object in image1 to all the near-by objects in image2.
+    # here we match each object in image1 to all the near-by objects in image2.
     for(obj_id1 in 1:nObjects1) {
         obj1_extent <- get_objExtent(image1, obj_id1) #location and radius
         shift <- get_std_flowVector(obj1_extent, image1, image2, flow_margin, stdFlow_mag)
@@ -202,7 +205,7 @@ locate_allObjects <- function(image1, image2) {
 #' So id2 in the last frame2 are actually ids related to frame1 now.
 correct_shift<-function(this_shift, current_objects, object_id1){
     last_heads <- c(current_objects$xhead[current_objects$id2==object_id1],
-    current_objects$yhead[current_objects$id2==object_id1])
+                    current_objects$yhead[current_objects$id2==object_id1])
 
     #for small shifts and empty last shifts
     if(is.na(last_heads) || all(last_heads<=1 && last_heads>=-1, na.rm = TRUE))
@@ -321,13 +324,13 @@ fft_shift <- function(fft_mat) {
         rd2 <- floor(nrow(fft_mat)/2)
         cd2 <- floor(ncol(fft_mat)/2)
 
-        ## Identify the first, second, third, and fourth quadrants
+        # Identify the first, second, third, and fourth quadrants
         q1 <- fft_mat[1:rd2,1:cd2]
         q2 <- fft_mat[1:rd2,(cd2+1):ncol(fft_mat)]
         q3 <- fft_mat[(rd2+1):nrow(fft_mat),(cd2+1):ncol(fft_mat)]
         q4 <- fft_mat[(rd2+1):nrow(fft_mat),1:cd2]
 
-        ## rearrange the quadrants
+        # rearrange the quadrants
         centered.t <- rbind(q4,q1)
         centered.b <- rbind(q3,q2)
         centered <- cbind(centered.b,centered.t)
@@ -493,7 +496,7 @@ create_outNC <- function(ofile, max_obs) {
 
     dim_stat <- ncdim_def("stat", vals = seq(3), units="", longname = "survival stats; lived, died, born")
 
-    ## Define Variables
+    # Define Variables
     var_survival <- ncvar_def("survival", units = "", longname = "survival stats for each scan",
                               dim=list(dim_stat, dim_time), missval = -999, prec="integer",
                               compression = deflat, shuffle = TRUE)
@@ -620,9 +623,9 @@ write_duration <- function(outNC, current_objects){
 
 #'This function takes in two R-lists containing information about current objects
 #' in the frame1 and their properties, such as center location and area. If the
-#' I am using an arbitrary crieterion for merging. If the E. distance between centers
-#' of the two objects c_dist < or = to r=sqrt(area), then they merged. Here, if we
-#' assume square objects, then the r is length of a side of the square.
+#' I am using an arbitrary crieterion for merging. If euclidean distance between centers
+#' of the two objects c_dist < or = to r=sqrt(area), then merging is considered.
+#' Here, if we assume square objects, then the r is length of a sides of the square.
 check_merging<-function(dead_obj_id1, current_objects, object_props){
     nobj_frame1 <- length(current_objects$id1)
     c_dist_all <- NULL
@@ -704,7 +707,7 @@ attach_xyheads <- function(frame1, frame2, current_objects) {
             yhead<-append(yhead, NA)
         }
     }
-        return(cbind(current_objects, xhead, yhead)) #attach values
+    return(cbind(current_objects, xhead, yhead)) #attach values
 }
 
 
@@ -942,9 +945,10 @@ setwd("~/data/darwin_radar/2d/")
 file_list <- Sys.glob(paths = "./cpol_2D_????.nc")
 
 for(infile_name in file_list){
-    outfile_name <- str_replace(infile_name, ".nc", "_tracks_test.nc") #V16_9.nc")
+    outfile_name <- str_replace(infile_name, ".nc", "_tracks_V16_10.nc")
     #outfile_name <- paste("../tracks/", basename(outfile_name), sep="")
     print(paste("Opening output file", outfile_name))
+
     outNC <- create_outNC(outfile_name, max_obs)
     uid_counter <- 0            #(a global variable) to start uid with 1, count from 0.
 
@@ -959,7 +963,7 @@ for(infile_name in file_list){
 
 
     start_scan <- 1
-    end_scan <- 500 #length(time)
+    end_scan <- length(time)
 
     newRain <- TRUE         #is this new rainy scan after dry period?
 
@@ -1041,3 +1045,4 @@ for(infile_name in file_list){
 #'Run following command to generate documentation
 #'
 #' rmarkdown::render("~/projects/darwin/src/echo_tracking.R", output_format = "pdf_document")
+
