@@ -1,7 +1,7 @@
 #' ---
 #' title: "Tracking Convection Echoes in CPOL Radar Data"
 #' author: "Bhupendra Raut"
-#' date: "October 06, 2016"
+#' date: "December 01, 2016"
 #' ---
 
 #'
@@ -77,7 +77,7 @@ get_filteredFrame <- function(ncfile, scan_num, min_size) {
 }
 
 #' Returns a single radar scan of classification for given scan_num.
-#' Convective objects lebeled with vertical class 1=Cg, 2=Cb, 3=Co
+#' Convective objects lebeled with vertical class 1=Cu_cong, 2=Cu_deep, 3=Cu_over
 get_classFrame <- function(ncfile, scan_num) {
     echo_height <- get_convHeight(ncfile, scan_num)
     get_vertical_class(echo_height) #returns this
@@ -109,7 +109,7 @@ clear_smallEchoes <- function(label_image, min_size) {
     invisible(label_image)
 }
 
-#' Given the convective height image, it returns vertical classification (Cg=1, Cb=2, Co=3)
+#' Given the convective height image, it returns vertical classification (Cu_cong=1, Cu_deep=2, Cu_over=3)
 get_vertical_class <- function(conv_height) {
     #min max scan levels for classification
     min_level <- c(5, 15, 31)
@@ -238,9 +238,9 @@ get_objExtent <- function(labeled_image, obj_label) {
 get_objClass_extent <- function(label_image, class_image, obj_label){
     objExtent <- get_objExtent(label_image, obj_label)
     objClass <- get_object_vertProfile(label_image, class_image, obj_label)
-    objExtent$Cg <- objClass$Cg
-    objExtent$Cb <- objClass$Cb
-    objExtent$Co <- objClass$Co
+    objExtent$Cu_cong <- objClass$Cu_cong
+    objExtent$Cu_deep <- objClass$Cu_deep
+    objExtent$Cu_over <- objClass$Cu_over
     return(objExtent)
 }
 
@@ -494,10 +494,10 @@ create_outNC <- function(ofile, max_obs) {
     dim_time <- ncdim_def("time", vals=1, units = "seconds since 1970-01-01 00:00:00 UTC",
                           longname = "time of the scan", unlim = TRUE, create_dimvar = TRUE)
 
-    dim_stat <- ncdim_def("stat", vals = seq(3), units="", longname = "survival stats; lived, died, born")
+    dim_stat <- ncdim_def("stat", vals = seq(4), units="", longname = "object survival vector; lived, died, born, total")
 
     # Define Variables
-    var_survival <- ncvar_def("survival", units = "", longname = "survival stats for each scan",
+    var_survival <- ncvar_def("survival", units = "", longname = "survival from the last scan",
                               dim=list(dim_stat, dim_time), missval = -999, prec="integer",
                               compression = deflat, shuffle = TRUE)
 
@@ -538,15 +538,15 @@ create_outNC <- function(ofile, max_obs) {
                           dim = list(dim_obs, dim_echo), missval = -999, prec = "integer",
                           compression = deflat, shuffle = TRUE)
 
-    var_ncg <- ncvar_def("Cg", units = "pixels", longname = "num of Cu Congestus pixels",
+    var_ncg <- ncvar_def("Cu_cong", units = "pixels", longname = "num of Cu Congestus pixels",
                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer",
                          compression = deflat, shuffle = TRUE)
 
-    var_ncb <- ncvar_def("Cb", units = "pixels", longname = "num of Cumulonimbus pixels",
+    var_ncb <- ncvar_def("Cu_deep", units = "pixels", longname = "num of deep convection pixels",
                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer",
                          compression = deflat, shuffle = TRUE)
 
-    var_nco <- ncvar_def("Co", units = "pixels", longname = "num of Cu overshooting pixels",
+    var_nco <- ncvar_def("Cu_over", units = "pixels", longname = "num of overshooting convection pixels",
                          dim = list(dim_obs, dim_echo), missval = -999, prec = "integer",
                          compression = deflat, shuffle = TRUE)
 
@@ -592,9 +592,9 @@ write_update<-function(outNC, current_objects, obj_props, obs_time){
 
         ncvar_put(outNC, varid = "area", obj_props$area[object],  start = nc_start, count = nc_count)
 
-        ncvar_put(outNC, varid = "Cg", obj_props$Cg[object], start = nc_start, count = nc_count)
-        ncvar_put(outNC, varid = "Cb", obj_props$Cb[object], start = nc_start, count = nc_count)
-        ncvar_put(outNC, varid = "Co", obj_props$Co[object], start = nc_start, count = nc_count)
+        ncvar_put(outNC, varid = "Cu_cong", obj_props$Cu_cong[object], start = nc_start, count = nc_count)
+        ncvar_put(outNC, varid = "Cu_deep", obj_props$Cu_deep[object], start = nc_start, count = nc_count)
+        ncvar_put(outNC, varid = "Cu_over", obj_props$Cu_over[object], start = nc_start, count = nc_count)
     }
 
     write_duration(outNC, current_objects)
@@ -664,8 +664,8 @@ write_survival <- function(outNC, survival_stat, time, scan){
         survival_stat <- unlist(survival_stat, use.names = FALSE)
     }
 
-    ncvar_put(outNC, varid = "survival", vals = survival_stat, start = c(1, scan), count = c(3, 1))
-    ncvar_put(outNC, varid = "time", vals = time, start = scan-1, count=1)
+    ncvar_put(outNC, varid = "survival", vals = survival_stat, start = c(1, scan), count = c(4, 1))
+    ncvar_put(outNC, varid = "time", vals = time, start = scan, count=1)
 }
 
 
@@ -886,23 +886,23 @@ get_objectProp <- function(image1, class1, xyDist){
 
         obj_class <- get_object_vertProfile(image1, class1, obj_label = obj) #class of convection for the object
 
-        #store number of pixels with classification Cg, Cb, Co etc.
-        objprop$Cg <- append(objprop$Cg, obj_class$Cg)
-        objprop$Cb <- append(objprop$Cb, obj_class$Cb)
-        objprop$Co <- append(objprop$Co, obj_class$Co)
+        #store number of pixels with classification Cu_cong, Cu_deep, Cu_over etc.
+        objprop$Cu_cong <- append(objprop$Cu_cong, obj_class$Cu_cong)
+        objprop$Cu_deep <- append(objprop$Cu_deep, obj_class$Cu_deep)
+        objprop$Cu_over <- append(objprop$Cu_over, obj_class$Cu_over)
     }
     objprop <- attach_xyDist(objprop, xyDist$x, xyDist$y)
     invisible(objprop)
 }
 
 
-#' Returns number of Cg, Cb and Co type pixels in the given object.
+#' Returns number of Cu_cong, Cu_deep and Cu_over type pixels in the given object.
 get_object_vertProfile <- function(label_image, class_image, obj_label){
     obj_class <- class_image[label_image==obj_label]
-    nCg <- length(obj_class[obj_class==1])
-    nCb <- length(obj_class[obj_class==2])
-    nCo <- length(obj_class[obj_class==3])
-    return(list(Cg = nCg, Cb = nCb, Co = nCo))
+    nCu_cong <- length(obj_class[obj_class==1])
+    nCu_deep <- length(obj_class[obj_class==2])
+    nCu_over <- length(obj_class[obj_class==3])
+    return(list(Cu_cong = nCu_cong, Cu_deep = nCu_deep, Cu_over = nCu_over))
 }
 
 
@@ -920,7 +920,7 @@ survival_stats <- function(pairs, num_obj2) {
     obj_lived <- length(pairs_vec[pairs_vec>0])
     obj_died <- length(pairs_vec)-obj_lived
     obj_born <- num_obj2 - obj_lived
-    return(list(lived=obj_lived, died=obj_died, born=obj_born))
+    return(list(lived=obj_lived, died=obj_died, born=obj_born, total=num_obj2))
 }
 #+ echo=FALSE
 #==============================================================================#
@@ -929,10 +929,10 @@ survival_stats <- function(pairs, num_obj2) {
 #+ echo=TRUE
 #'----------------------- Settings for tracking method ------------------------#
 search_margin <- 4          #pixels
-flow_margin <- 3            #pixels
+flow_margin <- 4            #pixels
 stdFlow_mag <- 5            #fft_flow will not be faster than this
 min_signif_movement <- 2    #not used at this time
-large_num <- 1000           #a large number
+large_num <- 1000           #a large number for Hungarian method
 max_obs<- 60                #longest recoreded track (eles show error).
 min_size <- 2               #objects smaller than this will be filter
 max_desparity <- 15         # two objects with more desparity than this value, are not same.
@@ -942,11 +942,12 @@ max_desparity <- 15         # two objects with more desparity than this value, a
 #+ echo=TRUE, eval=FALSE, warning=FALSE, error=FALSE, message=FALSE
 
 setwd("~/data/darwin_radar/2d/")
-file_list <- Sys.glob(paths = "./cpol_2D_????.nc")
+#file_list <- Sys.glob(paths = "./cpol_2D_????.nc")
+file_list <- Sys.glob(paths = "./cpol_2D_0405.nc")
 
 for(infile_name in file_list){
-    outfile_name <- str_replace(infile_name, ".nc", "_tracks_V16_10.nc")
-    #outfile_name <- paste("../tracks/", basename(outfile_name), sep="")
+    #outfile_name <- str_replace(infile_name, ".nc", "_tracks_V16_10.nc")
+    outfile_name <- "~/Desktop/test_tracks.nc"
     print(paste("Opening output file", outfile_name))
 
     outNC <- create_outNC(outfile_name, max_obs)
@@ -963,7 +964,7 @@ for(infile_name in file_list){
 
 
     start_scan <- 1
-    end_scan <- length(time)
+    end_scan <- 250 #length(time)
 
     newRain <- TRUE         #is this new rainy scan after dry period?
 
@@ -979,11 +980,15 @@ for(infile_name in file_list){
     frame2 <- get_filteredFrame(ncfile, start_scan, min_size)
     class2 <- get_classFrame(ncfile, start_scan) #classifictaion
 
+
     for(scan in (start_scan+1):end_scan){
         setTxtProgressBar(pb, scan) #progress bar
 
+        # save earlier frame2 to frame1
         frame1 <- frame2
         class1 <- class2
+
+        # and read next scan to frame2
         frame2 <- get_filteredFrame(ncfile, scan, min_size)
         class2 <- get_classFrame(ncfile, scan)
 
@@ -993,32 +998,51 @@ for(infile_name in file_list){
 
 
         #skip if no echoes in frame 1
-        if(max(frame1, na.rm = TRUE)==0){         #if no echoes in frame1
-            newRain = TRUE          #next rain will be newRain
-            write_survival(outNC, survival_stat = rep(0, 3),
-                           time = time[scan-1], scan = scan)
-
-            if(exists("current_objects"))
+        if(max(frame1, na.rm = TRUE)==0){       #if no echoes in frame1
+            newRain = TRUE                      #next rain will be newRain
+            if(exists("current_objects")){
                 rm(current_objects)
+            }
+
+            #write zeros for empty frames
+            write_survival(outNC, survival_stat = rep(0, 4),
+                          time = time[scan], scan = scan)
+
             next
         }
 
+        # now track them
         pairs <- get_matchPairs(frame1, frame2)
         obj_props <- get_objectProp(frame1, class1, list(x=x, y=y)) #of frame1
 
-        if(newRain){                #if this is newRain scan, init ids
+        #when echoes are found in frame1 and it is newRain, init ids
+        if(newRain){
             current_objects <- init_uids(frame1, frame2, pairs) #initiate ids and return
+
+            #then all the objects are born in this frame1
+            num_obj1 <- max(frame1)
+            survival <- c(rep(0, 2), num_obj1, num_obj1)
+
+            #except for the first scan where values are missing
+            if(scan==start_scan+1)
+                survival <- c(rep(-999, 3), num_obj1)
+
+            write_survival(outNC, survival_stat = survival,
+                           time = time[scan-1], scan = scan-1)
+
             newRain <- FALSE
-        } else {                    #else update old ids
+
+        } else {            #else update old ids
             current_objects <- update_current_objects(frame1, frame2, pairs, current_objects)
         }
+
         write_update(outNC, current_objects, obj_props, time[scan-1]) #for frame1
 
-        #Survival is from frame1 to frame2
+        #Survival for frame2
         num_obj2 <- max(frame2)
         obj_survival <- survival_stats(pairs, num_obj2)
         write_survival(outNC, survival_stat = obj_survival,
-                       time = time[scan-1], scan = scan)
+                       time = time[scan], scan = scan)
     }
 
 
@@ -1038,7 +1062,7 @@ for(infile_name in file_list){
 
 
 #+ echo=FALSE, eval=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.width=9, fig.height=9, fig.cap="Function call graph"
-#library(RColorBrewer)
+#library(RCu_overlorBrewer)
 #library(mvbutils)
 #foodweb(border = TRUE, boxcolor = "skyblue", textcolor = "black", cex = 0.8, lwd=2)
 
