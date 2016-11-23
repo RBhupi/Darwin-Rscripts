@@ -15,6 +15,10 @@
 #' Hungarian method. For the object pairs with large disparity, we assumed that the old object is dead in frame1
 #' and the new object was born in frame2.
 #'
+#' John A Leese, Charles S Novak, and Bruce B Clark. An automated technique for obtaining
+#' cloud motion from geosynchronous satellite data using cross correlation.
+#' Journal of applied meteorology, 10(1):118–132, 1971.
+#'
 #' 1. The unique identity numbers are produced for new objects and was kept
 #' constant through out the life of that object.
 #' 2. All the distances used for tracking are in pixels, hence this code can be
@@ -23,11 +27,12 @@
 #' Uid of the origin/product echos written in arrays named `origin' and `merged'.
 #'
 #'
-#'
+#'Issues: 1. NetCDF files missing value issue persists. http://stackoverflow.com/q/37202454/1227454
+#'      2. Check correctness of the output "survival_stat" for all the conditions.
 #'
 #' ToDo
 #' 1. Check overlapping pixels to identify better match.
-#' 2. Use vertical profile of clouds for better assignment
+#' 2. Use vertical profile of clouds for better assignment (KF)
 #' 3. change size_change factor
 #+ echo=FALSE
 #==========================================================================================
@@ -408,7 +413,7 @@ get_disparity_all <- function(obj_found, image2, search_box, obj1_extent) {
 
         if(length(obj_found)==1){ # if this is the only object
             disparity <- get_disparity(obj_found, image2, search_box, obj1_extent)
-            if(disparity <= 2) disparity <- 0 #lower the disparity if not too large
+            if(disparity <= 3) disparity <- 0 #lower the disparity if not too large
 
         } else { # when more than one objects to match
             disparity <- get_disparity(obj_found, image2, search_box, obj1_extent)
@@ -432,7 +437,6 @@ save_objMatch <- function(obj_id1, obj_found, disparity, obj_match) {
 
 #' Computes disparity for a single object. Check how it is computed for detail.
 #' This parameter has most effect on the acccuracy of the tracks.
-#'
 get_disparity <- function(obj_found, image2, search_box, obj1_extent) {
     dist_pred <- c(NULL)
     dist_actual <- c(NULL)
@@ -476,8 +480,7 @@ get_sizeChange<-function(x, y){
 
 
 
-
-#' Creates output netcdf file for radar echo tracjecories. This is the longest function.
+#' Creates output netcdf file for radar echo trajectories. This is the longest function.
 create_outNC <- function(ofile, max_obs) {
     if(file.exists(ofile)){
         print(paste("removing existing file", basename(ofile)))
@@ -486,7 +489,7 @@ create_outNC <- function(ofile, max_obs) {
     deflat <- 9
 
     dim_echo <- ncdim_def("echo_id", vals=1, units = "", unlim = TRUE,
-                          longname = "unique id of convective echo", create_dimvar = TRUE)
+                          longname = "unique id of convection echo", create_dimvar = TRUE)
 
     dim_obs <- ncdim_def("records", vals = seq(max_obs), units="",
                          longname = "observation records")
@@ -602,7 +605,6 @@ write_update<-function(outNC, current_objects, obj_props, obs_time){
 
 
 #' Writes number of observations for dead objects.
-#' The time written here is one step earlier (needs correction).
 write_duration <- function(outNC, current_objects){
     nobj <- length(current_objects$id1)
 
@@ -620,6 +622,7 @@ write_duration <- function(outNC, current_objects){
         }
     }
 }
+
 
 #'This function takes in two R-lists containing information about current objects
 #' in the frame1 and their properties, such as center location and area. If the
@@ -856,7 +859,7 @@ find_origin <- function(id1_newObj, frame1){
     else
         return(big_diff_obj[1])
     # NOTE: 1. At this time we are calling big_diff_obj as origin in all the situations.
-    # This looks like good a first guess. But if needed we can make it more
+    # This looks like a good first guess. But if needed we can make it more
     # complex and use ratio and size_diff as cost function.
     # 2. We are not considering the possibility of multiple potential origins
     # beyond this point.
@@ -972,10 +975,10 @@ for(infile_name in file_list){
     pb = txtProgressBar(min =start_scan, max = end_scan, initial = 1, style = 3) #progress bar
 
     #' To continuousely track the echoes in the images,
-    #' we read the first frame and save it in to frame2 then in the loop,
-    #' this frame will be copied to frame1 and next frame will be frame2.
+    #' we read the first scan and save it in to array named frame2 then in the loop,
+    #' this frame will be copied to the array named frame1 and next scan will be frame2.
     #'
-    #' frame1 <-- frame2 <-- new frame  (repeat)
+    #' frame1 <-- frame2 <-- next scan  (repeat)
     #+ echo=TRUE, eval=FALSE, warning=FALSE, error=FALSE, message=FALSE
     frame2 <- get_filteredFrame(ncfile, start_scan, min_size)
     class2 <- get_classFrame(ncfile, start_scan) #classifictaion
@@ -992,7 +995,8 @@ for(infile_name in file_list){
         frame2 <- get_filteredFrame(ncfile, scan, min_size)
         class2 <- get_classFrame(ncfile, scan)
 
-        if(scan==end_scan){ #if this is the last scan make it zero.
+        #if this is the last scan make it zero. This kills all the objects.
+        if(scan==end_scan){
             frame2 <- replace(frame2, frame2>0, 0)
         }
 
@@ -1011,19 +1015,19 @@ for(infile_name in file_list){
             next
         }
 
-        # now track them
+        # track when echoes are present in frame1
         pairs <- get_matchPairs(frame1, frame2)
         obj_props <- get_objectProp(frame1, class1, list(x=x, y=y)) #of frame1
 
-        #when echoes are found in frame1 and it is newRain, init ids
+        #when echoes are found in frame1 and it is newRain, init uids
         if(newRain){
-            current_objects <- init_uids(frame1, frame2, pairs) #initiate ids and return
+            current_objects <- init_uids(frame1, frame2, pairs) #init ids and return list of objects
 
-            #then all the objects are born in this frame1
+            #for newRain, all the objects are born in this frame1
             num_obj1 <- max(frame1)
             survival <- c(rep(0, 2), num_obj1, num_obj1)
 
-            #except for the first scan where values are missing
+            #except for the first scan where values should be missing
             if(scan==start_scan+1)
                 survival <- c(rep(-999, 3), num_obj1)
 
