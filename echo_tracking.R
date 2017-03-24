@@ -101,6 +101,7 @@ get_convHeight <- function(ncfile, scan) {
     dbz_height <- replace(dbz_height, is.na(dbz_height), 0.0)     #remove NAs
 }
 
+
 #' Takes in labeled image removes objects smaller than min_size and returns re-labeled image.
 clear_smallEchoes <- function(label_image, min_size) {
     size_table <- table(label_image[label_image>0]) # remove zero values
@@ -187,7 +188,7 @@ locate_allObjects <- function(image1, image2) {
     # here we match each object in image1 to all the near-by objects in image2.
     for(obj_id1 in 1:nObjects1) {
         obj1_extent <- get_objExtent(image1, obj_id1) #location and radius
-        shift <- get_std_flowVector(obj1_extent, image1, image2, flow_margin, stdFlow_mag)
+        shift <- get_std_flowVector(obj1_extent, image1, image2, flow_margin, maxFlow_mag)
 
         if(exists("current_objects"))
             shift <- correct_shift(shift, current_objects, obj_id1)
@@ -559,6 +560,8 @@ create_outNC <- function(ofile, max_obs) {
 
     outNC <- nc_create(filename = ofile, vars = var_list)
 
+    write_settingParms_toNC(outNC)
+
     #for CF standards
     ncatt_put(outNC, varid = "echo_id", attname = "cf_role", attval = "trajectory_id")
     ncatt_put(outNC, varid = 0, attname = "featureType", attval = "trajectory")
@@ -577,6 +580,18 @@ create_outNC <- function(ofile, max_obs) {
 
     invisible(outNC)
 }
+
+
+#' Writes all the setting parameters (as attributes) for the tracking. These parameters affect
+#' the sensitivity of the tracks, mergers and split definitions etc.
+write_settingParms_toNC <- function(outNC){
+    ncatt_put(outNC, varid = 0, attname = "search_margin", attval =search_margin, prec = "short")
+    ncatt_put(outNC, varid = 0, attname = "flow_margin", attval =flow_margin, prec = "short")
+    ncatt_put(outNC, varid = 0, attname = "maxFlow_magnitude", attval =maxFlow_mag, prec = "short")
+    ncatt_put(outNC, varid = 0, attname = "min_echoSize_toTrack", attval =min_size, prec = "short")
+    ncatt_put(outNC, varid = 0, attname = "max_desparity", attval =max_desparity, prec = "short")
+}
+
 
 
 #' Writes properties and uids for all objects into output netcdf file.
@@ -933,7 +948,7 @@ survival_stats <- function(pairs, num_obj2) {
 #'----------------------- Settings for tracking method ------------------------#
 search_margin <- 4          #pixels
 flow_margin <- 4            #pixels
-stdFlow_mag <- 5            #fft_flow will not be faster than this
+maxFlow_mag <- 5            #fft_flow will not be faster than this
 min_signif_movement <- 2    #not used at this time
 large_num <- 1000           #a large number for Hungarian method
 max_obs<- 60                #longest recoreded track (eles show error).
@@ -946,10 +961,10 @@ max_desparity <- 15         # two objects with more desparity than this value, a
 
 setwd("~/data/darwin_radar/2d/")
 #file_list <- Sys.glob(paths = "./cpol_2D_????.nc")
-file_list <- Sys.glob(paths = "./cpol_2D_0405.nc")
+file_list <- Sys.glob(paths = "./cpol_2D_2004-11-03.nc")
 
 for(infile_name in file_list){
-    #outfile_name <- str_replace(infile_name, ".nc", "_tracks_V16_10.nc")
+    #outfile_name <- str_replace(infile_name, ".nc", "_tracks_V16_11.nc")
     outfile_name <- "~/Desktop/test_tracks.nc"
     print(paste("Opening output file", outfile_name))
 
@@ -967,7 +982,7 @@ for(infile_name in file_list){
 
 
     start_scan <- 1
-    end_scan <- 250 #length(time)
+    end_scan <- length(time)
 
     newRain <- TRUE         #is this new rainy scan after dry period?
 
