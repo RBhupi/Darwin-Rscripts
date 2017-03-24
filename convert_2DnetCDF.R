@@ -54,7 +54,7 @@ open_2dncFile <- function(out_fname, infile_nc){
     t_dim <- ncdim_def(name = "time", units = tunit_str$value, calendar = "gregorian",
                        vals= 1, longname = "Time of the scan", unlim = TRUE)
 
-    var_scan <- ncvar_def("scan", units = "echo_id", longname = "pixels are labeled with echo id",
+    var_scan <- ncvar_def("scan", units = "echo_id", longname = "labeled track id, untracked -1",
                          dim = list(x_dim, y_dim, t_dim), missval = -999, prec = "integer",
                          compression = 9, shuffle = TRUE)
 
@@ -93,7 +93,7 @@ lable_scan_ids <- function(scan_2d, track_ids, time_of_scan){
 }
 
 
-#' Returns x-y position of the center of the given echo  at given time
+#' Returns x-y position of the center of the given echo at given time.
 get_echo_xy <- function(track_id, time){
     x<-ncvar_get(ncf_tracks, varid = "x", start = as.vector(track_id), count=c(1, 1))
     y<-ncvar_get(ncf_tracks, varid = "y", start = as.vector(track_id), count=c(1, 1))
@@ -133,17 +133,19 @@ y1<- ncvar_get(ncf_scans, varid="y")
 #----------------------read all track times-----------------------------#
 ncf_tracks <- nc_open(fname_tracks, readunlim = FALSE)
 track_times <- ncvar_get(ncf_tracks, varid = "record_time", start = c(1, 1), count = c(-1, -1))
-
+min_size <- ncatt_get(ncf_tracks, varid = 0, attname = "min_echoSize_toTrack")
 
 #open output file
 outnc <- open_2dncFile(fname_2dOut, ncf_scans)
 
-
+pb = txtProgressBar(min =1, max = nscans, initial = 1, style = 3) #progress bar
 
 for(scan in seq(nscans)){
+    setTxtProgressBar(pb, scan) #advance progress bar
+
     track_ids <- select_track_ids(track_times, time[scan])
     radar_scan <- get_RadarScan(ncf_scans, scan)
-    radar_scan <- label_smallEchoes(radar_scan, min_size) #labels 1-pix objects
+    radar_scan <- label_smallEchoes(radar_scan, min_size$value) #labels 1-pix objects
 
     #if no tracked echoes, label untracked echoes -1
     if(is.empty(track_ids)){
