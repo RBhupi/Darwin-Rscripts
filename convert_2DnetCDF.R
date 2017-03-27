@@ -18,7 +18,7 @@ select_track_ids<-function(track_time, scan_time){
 }
 
 
-#retruns labeled radar scan with convection pixels only
+#retruns negatively labeled radar scan with convection pixels only
 get_RadarScan<-function(ncf_scans, scan_num){
     scan_data <- ncvar_get(ncf_scans, varid="steiner_class",
                            start = c(1, 1, scan_num), count=c(-1, -1, 1))
@@ -26,12 +26,21 @@ get_RadarScan<-function(ncf_scans, scan_num){
     #keep only convective pixels
     scan_data <- replace(scan_data, scan_data==1, 0) #remove non-convective
 
+    return(bwlabel_neg(scan_data))
+}
+
+
+#' Lables scan data with object lables using negative integer lables.
+#' Puts missing values where appropriate.
+bwlabel_neg <- function(scan_data){
     labled_data <- bwlabel(scan_data) #lable continuouse objects
+
+    #we make all the temp lables negative so that they wont crash with echo_lables.
+    labled_data<- labled_data *-1
 
     #we need to add missing values back, as they are relabled by bwlabel()
     labled_data <- replace(labled_data, labled_data==labled_data[1, 1], -999)
     labled_data <- replace(labled_data, labled_data==labled_data[61, 61], -999)
-
     return(labled_data)
 }
 
@@ -79,7 +88,7 @@ write_scan <- function(ncfile, scan_data, scan_num){
 
 #' Takes in labeled image and label objects smaller than min_size with id= -1.
 label_smallEchoes <- function(label_image, min_size) {
-    size_table <- table(label_image[label_image>0])  #remove zero values
+    size_table <- table(label_image[label_image!=0 & label_image!=-999])#remove zero/missing values
     onePix_objects <- as.numeric(names(which(size_table < min_size)))
 
     for(obj in onePix_objects){
@@ -112,7 +121,7 @@ get_echo_xy <- function(track_id, time){
 label_id_inScan<-function(scan_bwlb, xy, id_label){
     temp_label <- scan_bwlb[xy[1], xy[2]]
 
-    if(temp_label <= 0){  # check that center is a pixel inside the echo
+    if(temp_label== 0 || temp_label==-999){  # check that center is a pixel inside the echo
         stop(paste("center of echo has invalid value ", temp_label, " for id ", id_label))
     }
     scan_bwlb <- replace(scan_bwlb, scan_bwlb==temp_label, id_label)
