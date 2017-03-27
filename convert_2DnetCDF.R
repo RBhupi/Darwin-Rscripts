@@ -25,7 +25,14 @@ get_RadarScan<-function(ncf_scans, scan_num){
 
     #keep only convective pixels
     scan_data <- replace(scan_data, scan_data==1, 0) #remove non-convective
-    return(bwlabel(scan_data))
+
+    labled_data <- bwlabel(scan_data) #lable continuouse objects
+
+    #we need to add missing values back, as they are relabled by bwlabel()
+    labled_data <- replace(labled_data, labled_data==labled_data[1, 1], -999)
+    labled_data <- replace(labled_data, labled_data==labled_data[61, 61], -999)
+
+    return(labled_data)
 }
 
 #' Changes base epoch of. Default To_epoch is "1970-01-01.
@@ -51,8 +58,8 @@ open_2dncFile <- function(out_fname, infile_nc){
     y_dim <- ncdim_def(name = "y", units = xyunit_str$value, vals = y1,
                        longname = "distance from radar in meridional direction")
 
-    t_dim <- ncdim_def(name = "time", units = tunit_str$value, calendar = "gregorian",
-                       vals= 1, longname = "Time of the scan", unlim = TRUE)
+    t_dim <- ncdim_def(name = "time", units = "seconds since 1970-01-01 00:00:00 UTC", calendar = "gregorian",
+                       vals= time, longname = "Time of the scan", unlim = TRUE)
 
     var_scan <- ncvar_def("scan", units = "echo_id", longname = "labeled track id, untracked -1",
                          dim = list(x_dim, y_dim, t_dim), missval = -999, prec = "integer",
@@ -72,8 +79,8 @@ write_scan <- function(ncfile, scan_data, scan_num){
 
 #' Takes in labeled image and label objects smaller than min_size with id= -1.
 label_smallEchoes <- function(label_image, min_size) {
-    size_table <- table(label_image[label_image>0]) # remove zero values
-    onePix_objects <- as.vector(which(size_table < min_size))
+    size_table <- table(label_image[label_image>0])  #remove zero values
+    onePix_objects <- as.numeric(names(which(size_table < min_size)))
 
     for(obj in onePix_objects){
         label_image <- replace(label_image, label_image == obj, -1)
@@ -106,9 +113,9 @@ label_id_inScan<-function(scan_bwlb, xy, id_label){
     temp_label <- scan_bwlb[xy[1], xy[2]]
 
     if(temp_label <= 0){  # check that center is a pixel inside the echo
-        stop(paste("center of echo has invalid value ", temp_label))
+        stop(paste("center of echo has invalid value ", temp_label, " for id ", id_label))
     }
-    replace(scan_bwlb, scan_bwlb==temp_label, id_label)
+    scan_bwlb <- replace(scan_bwlb, scan_bwlb==temp_label, id_label)
     return(scan_bwlb)
 }
 ################################################################################
@@ -129,6 +136,7 @@ nscans <- length(time)
 #read XY dims
 x1 <- ncvar_get(ncf_scans, varid="x")
 y1<- ncvar_get(ncf_scans, varid="y")
+missing_val <- ncatt_get(ncf_scans, varid = "steiner_class", attname ="_FillValue")
 
 #----------------------read all track times-----------------------------#
 ncf_tracks <- nc_open(fname_tracks, readunlim = FALSE)
@@ -149,7 +157,7 @@ for(scan in seq(nscans)){
 
     #if no tracked echoes, label untracked echoes -1
     if(is.empty(track_ids)){
-        write_scan(outnc, labled_scan, scan)
+        write_scan(outnc, radar_scan, scan)
         next
     }
 
