@@ -105,7 +105,7 @@ get_convHeight <- function(ncfile, scan) {
 #' Takes in labeled image removes objects smaller than min_size and returns re-labeled image.
 clear_smallEchoes <- function(label_image, min_size) {
     size_table <- table(label_image[label_image>0]) # remove zero values
-    onePix_objects <- as.vector(which(size_table < min_size))
+    onePix_objects <- as.numeric(names(which(size_table < min_size)))
 
     for(obj in onePix_objects){
         label_image <- replace(label_image, label_image == obj, 0.0)
