@@ -5,7 +5,6 @@
 #' author: "Bhupendra Raut"
 #' date: "December 24, 2016"
 #' ---
-
 library(ncdf4)
 library(stringr)
 library(EBImage)  # for bwlabel,
@@ -24,7 +23,10 @@ get_RadarScan<-function(ncf_scans, scan_num){
                            start = c(1, 1, scan_num), count=c(-1, -1, 1))
 
     #keep only convective pixels
-    scan_data <- replace(scan_data, scan_data==1, 0) #remove non-convective
+    #scan_data <- replace(scan_data, scan_data==1, 0) #remove non-convective
+
+    scan_data <- replace(scan_data, scan_data!= 2, 0.0) #remove non-convective
+    scan_data <- replace(scan_data, is.na(scan_data), 0.0)     #remove NAs
 
     return(bwlabel_neg(scan_data))
 }
@@ -39,8 +41,8 @@ bwlabel_neg <- function(scan_data){
     labled_data<- labled_data *-1
 
     #we need to add missing values back, as they are relabled by bwlabel()
-    labled_data <- replace(labled_data, labled_data==labled_data[1, 1], -999)
-    labled_data <- replace(labled_data, labled_data==labled_data[61, 61], -999)
+    labled_data <- replace(labled_data, labled_data==labled_data[1, 1], missing_data)
+    labled_data <- replace(labled_data, labled_data==labled_data[61, 61], missing_data)
     return(labled_data)
 }
 
@@ -70,8 +72,8 @@ open_2dncFile <- function(out_fname, infile_nc){
     t_dim <- ncdim_def(name = "time", units = "seconds since 1970-01-01 00:00:00 UTC", calendar = "gregorian",
                        vals= time, longname = "Time of the scan", unlim = TRUE)
 
-    var_scan <- ncvar_def("scan", units = "echo_id", longname = "labeled track id, untracked -1",
-                         dim = list(x_dim, y_dim, t_dim), missval = -999, prec = "integer",
+    var_scan <- ncvar_def("scan", units = "echo_id", longname = paste("labeled echo id, untracked", untracked_label),
+                         dim = list(x_dim, y_dim, t_dim), missval = missing_data, prec = "integer",
                          compression = 9, shuffle = TRUE)
 
     outNC <- nc_create(filename = out_fname, vars = var_scan)
@@ -88,11 +90,11 @@ write_scan <- function(ncfile, scan_data, scan_num){
 
 #' Takes in labeled image and label objects smaller than min_size with id= -1.
 label_smallEchoes <- function(label_image, min_size) {
-    size_table <- table(label_image[label_image!=0 & label_image!=-999])#remove zero/missing values
+    size_table <- table(label_image[label_image!=0 & label_image!=missing_data])#remove zero/missing values
     onePix_objects <- as.numeric(names(which(size_table < min_size)))
 
     for(obj in onePix_objects){
-        label_image <- replace(label_image, label_image == obj, -1)
+        label_image <- replace(label_image, label_image == obj, untracked_label)
     }
     invisible(label_image)
 }
@@ -102,7 +104,7 @@ lable_scan_ids <- function(scan_2d, track_ids, time_of_scan){
     nids <- length(track_ids[, 2])
 
     for(track in 1:nids){
-        echo_xy<-get_echo_xy(track_ids[track, ], time_of_scan)
+        echo_xy<-get_echo_xy_and_area(track_ids[track, ], time_of_scan)
         scan_2d <- label_id_inScan(scan_2d, echo_xy, track_ids[track, 2])
     }
     return(scan_2d)
@@ -110,10 +112,11 @@ lable_scan_ids <- function(scan_2d, track_ids, time_of_scan){
 
 
 #' Returns x-y position of the center of the given echo at given time.
-get_echo_xy <- function(track_id, time){
+get_echo_xy_and_area <- function(track_id, time){
     x<-ncvar_get(ncf_tracks, varid = "x", start = as.vector(track_id), count=c(1, 1))
     y<-ncvar_get(ncf_tracks, varid = "y", start = as.vector(track_id), count=c(1, 1))
-    return(c(x, y))
+    area <-ncvar_get(ncf_tracks, varid = "area", start = as.vector(track_id), count=c(1, 1))
+    return(c(x, y, area))
 }
 
 
@@ -121,19 +124,44 @@ get_echo_xy <- function(track_id, time){
 label_id_inScan<-function(scan_bwlb, xy, id_label){
     temp_label <- scan_bwlb[xy[1], xy[2]]
 
-    if(temp_label== 0 || temp_label==-999){  # check that center is a pixel inside the echo
-        stop(paste("center of echo has invalid value ", temp_label, " for id ", id_label))
+    #if center is an empty pixel check surrounding pixels.
+    if(temp_label == 0 || temp_label ==missing_data){
+        temp_label <- scan_bwlb[(xy[1]-1):(xy[1]+1), (xy[2]-1):(xy[2]+1)]
+
+        #find unique non-zero lables
+        temp_label <- unique(temp_label[temp_label!=0 & temp_label!= missing_data])
+
+        #now check the area of each temporary labled echo to match with echo_area.
+        for(an_echo in temp_label){
+            area_of_echo <- length(which(scan_bwlb==an_echo))
+            if(area_of_echo==xy[3]){
+                temp_label=an_echo
+                scan_bwlb <- replace(scan_bwlb, scan_bwlb==temp_label, id_label)
+                break
+            }
+            # if no echo was found in the scan for the given track-time
+            # we simply return the image without labeling any pixels. This will create
+            # a problem so I need to make that echo untracked, if it exists somewhere
+            # in the scan. These instances are rare (1 in 500 or so), hence they are hard to find and fix.
+        }
+    }else{
+        scan_bwlb <- replace(scan_bwlb, scan_bwlb==temp_label, id_label)
     }
-    scan_bwlb <- replace(scan_bwlb, scan_bwlb==temp_label, id_label)
+
     return(scan_bwlb)
 }
+
+
+
 ################################################################################
+untracked_label <- -1
+missing_data <- -999
 
 #All File names
-fname_scans <- "~/projects/darwin/data/2d/cpol_2D_2004-11-03.nc"
-fname_tracks <- "~/Desktop/test_tracks.nc"
-#fname_tracks <- "~/projects/darwin/data/tracks/cpol_2D_0506_tracks_V16_10.nc"
-fname_2dOut <- str_replace(fname_tracks, "_tracks", "_2d-tracks")
+fname_scans <- "~/projects/darwin/data/2d/cpol_2D_0607.nc"
+#fname_tracks <- "~/Desktop/test_tracks.nc"
+fname_tracks <- "~/projects/darwin/data/tracks/cpol_2D_0607_tracks_V17-03.nc"
+fname_2dOut <- str_replace(fname_tracks, "_tracks_", "_2d-tracks_")
 
 #---------------------read radar scan file-------------------------#
 ncf_scans <- nc_open(fname_scans)
