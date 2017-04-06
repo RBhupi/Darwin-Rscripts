@@ -231,11 +231,16 @@ get_objExtent <- function(labeled_image, obj_label) {
     ylength <- max(obj_index[, 2]) - min(obj_index[, 2]) + 1
 
     obj_radius<- max(c(xlength, ylength))/2 #maximum possible object radius
-    obj_center <- c(min(obj_index[, 1])+obj_radius, min(obj_index[, 2]) + obj_radius)
+    #obj_center <- c(min(obj_index[, 1]) + obj_radius, min(obj_index[, 2]) + obj_radius)
+
+    #definition of object center based on median, This needs some thought
+    obj_center <- c(median(obj_index[, 1]), median(obj_index[, 2]))
+
     obj_area <- length(obj_index[, 1])  #size in pixels
 
     obj_extent<-list(obj_center=obj_center, obj_radius=obj_radius,
                      obj_area=obj_area, obj_index=obj_index)
+
     return(obj_extent)
 }
 
@@ -695,11 +700,9 @@ init_uids <- function(first_frame, second_frame, pairs){
 
     objects_mat[, 1] <- seq(nobj)               #id1
     objects_mat[, 2] <- next_uid(count = nobj) #unique ids
-    objects_mat[, 3] <- as.vector(pairs)#as they are in frame2
+    objects_mat[, 3] <- as.vector(pairs) #as they are in frame2
     objects_mat[, 4] <-rep(1, nobj)     #observation number for the echo
     objects_mat[, 5] <-rep(0, nobj)
-
-
 
     current_objects <- data.frame(objects_mat, row.names = NULL)
     colnames(current_objects) <- c("id1", "uid", "id2", "obs_num", "origin")
@@ -951,7 +954,7 @@ flow_margin <- 4            #pixels
 maxFlow_mag <- 5            #fft_flow will not be faster than this
 min_signif_movement <- 2    #not used at this time
 large_num <- 1000           #a large number for Hungarian method
-max_obs<- 60                #longest recoreded track (eles show error).
+max_obs<- 100                #longest recoreded track (eles show error).
 min_size <- 2               #objects smaller than this will be filter
 max_desparity <- 15         # two objects with more desparity than this value, are not same.
 #==============================================================================#
@@ -960,12 +963,12 @@ max_desparity <- 15         # two objects with more desparity than this value, a
 #+ echo=TRUE, eval=FALSE, warning=FALSE, error=FALSE, message=FALSE
 
 setwd("~/data/darwin_radar/2d/")
-#file_list <- Sys.glob(paths = "./cpol_2D_????.nc")
-file_list <- Sys.glob(paths = "./cpol_2D_2004-11-03.nc")
+file_list <- Sys.glob(paths = "./cpol_2D_????.nc")
+#file_list <- Sys.glob(paths = "./cpol_2D_2004-11-03.nc")
 
 for(infile_name in file_list){
-    #outfile_name <- str_replace(infile_name, ".nc", "_tracks_V16_11.nc")
-    outfile_name <- "~/Desktop/test_tracks.nc"
+    outfile_name <- str_replace(infile_name, ".nc", "_tracks_V17-03.nc")
+    #outfile_name <- "~/Desktop/test_tracks.nc"
     print(paste("Opening output file", outfile_name))
 
     outNC <- create_outNC(outfile_name, max_obs)
