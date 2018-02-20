@@ -74,9 +74,10 @@ plot_objects_label <- function(labeled_image, xvalues, yvalues){
 
 #' Returns a single radar scan from the netcdf file.
 #' Smaller objects are removed and the rest are lebeled.
-get_filteredFrame <- function(ncfile, scan_num, min_size) {
-    echo_height <- get_convHeight(ncfile, scan_num)
-    labeled_echo <- bwlabel(echo_height)          #label objects
+get_filteredFrame <- function(ncfile, var_id, scan_num, min_size) {
+    frame <- ncvar_get(nc=ncfile, varid = var_id, 
+                        start = c(1, 1, scan_num), count = c(-1, -1, 1))
+    labeled_echo <- bwlabel(frame)          #label objects
     frame <-clear_smallEchoes(labeled_echo, min_size)
     invisible(frame)
 }
@@ -248,10 +249,10 @@ get_objExtent <- function(labeled_image, obj_label) {
 #' Returns object_extent with number of pixel of each class for the given object.
 get_objClass_extent <- function(label_image, class_image, obj_label){
     objExtent <- get_objExtent(label_image, obj_label)
-    objClass <- get_object_vertProfile(label_image, class_image, obj_label)
-    objExtent$Cu_cong <- objClass$Cu_cong
-    objExtent$Cu_deep <- objClass$Cu_deep
-    objExtent$Cu_over <- objClass$Cu_over
+    #objClass <- get_object_vertProfile(label_image, class_image, obj_label)
+    #objExtent$Cu_cong <- objClass$Cu_cong
+    #objExtent$Cu_deep <- objClass$Cu_deep
+    #objExtent$Cu_over <- objClass$Cu_over
     return(objExtent)
 }
 
@@ -547,20 +548,20 @@ create_outNC <- function(ofile, max_obs) {
                           dim = list(dim_obs, dim_echo), missval = -999, prec = "integer",
                           compression = deflat, shuffle = TRUE)
 
-    var_ncg <- ncvar_def("Cu_cong", units = "pixels", longname = "num of Cu Congestus pixels",
-                         dim = list(dim_obs, dim_echo), missval = -999, prec = "integer",
-                         compression = deflat, shuffle = TRUE)
+    #var_ncg <- ncvar_def("Cu_cong", units = "pixels", longname = "num of Cu Congestus pixels",
+    #                     dim = list(dim_obs, dim_echo), missval = -999, prec = "integer",
+    #                     compression = deflat, shuffle = TRUE)
 
-    var_ncb <- ncvar_def("Cu_deep", units = "pixels", longname = "num of deep convection pixels",
-                         dim = list(dim_obs, dim_echo), missval = -999, prec = "integer",
-                         compression = deflat, shuffle = TRUE)
+    #var_ncb <- ncvar_def("Cu_deep", units = "pixels", longname = "num of deep convection pixels",
+    #                     dim = list(dim_obs, dim_echo), missval = -999, prec = "integer",
+    #                     compression = deflat, shuffle = TRUE)
 
-    var_nco <- ncvar_def("Cu_over", units = "pixels", longname = "num of overshooting convection pixels",
-                         dim = list(dim_obs, dim_echo), missval = -999, prec = "integer",
-                         compression = deflat, shuffle = TRUE)
+    #var_nco <- ncvar_def("Cu_over", units = "pixels", longname = "num of overshooting convection pixels",
+    #                     dim = list(dim_obs, dim_echo), missval = -999, prec = "integer",
+    #                     compression = deflat, shuffle = TRUE)
 
     var_list <- list(var_time, var_survival, var_dur, var_origin, var_merged, var_xdist, var_ydist,
-                     var_x, var_y, var_npix, var_ncg, var_ncb, var_nco)
+                     var_x, var_y, var_npix) #, var_ncg, var_ncb, var_nco)
 
 
     outNC <- nc_create(filename = ofile, vars = var_list)
@@ -571,7 +572,7 @@ create_outNC <- function(ofile, max_obs) {
     ncatt_put(outNC, varid = "echo_id", attname = "cf_role", attval = "trajectory_id")
     ncatt_put(outNC, varid = 0, attname = "featureType", attval = "trajectory")
 
-    description <- paste("The CPOL radar echoes of convective types were separated using Steiner classification scheme and tracked.",
+    description <- paste("The CPOL (Darwin) radar echoes of convective types were separated using Steiner classification scheme and tracked.",
                          "Merging and splitting is added with echo ids.")
 
     ncatt_put(outNC, varid = 0, attname = "_description",
@@ -615,9 +616,9 @@ write_update<-function(outNC, current_objects, obj_props, obs_time){
 
         ncvar_put(outNC, varid = "area", obj_props$area[object],  start = nc_start, count = nc_count)
 
-        ncvar_put(outNC, varid = "Cu_cong", obj_props$Cu_cong[object], start = nc_start, count = nc_count)
-        ncvar_put(outNC, varid = "Cu_deep", obj_props$Cu_deep[object], start = nc_start, count = nc_count)
-        ncvar_put(outNC, varid = "Cu_over", obj_props$Cu_over[object], start = nc_start, count = nc_count)
+        #ncvar_put(outNC, varid = "Cu_cong", obj_props$Cu_cong[object], start = nc_start, count = nc_count)
+        #ncvar_put(outNC, varid = "Cu_deep", obj_props$Cu_deep[object], start = nc_start, count = nc_count)
+        #ncvar_put(outNC, varid = "Cu_over", obj_props$Cu_over[object], start = nc_start, count = nc_count)
     }
 
     write_duration(outNC, current_objects)
@@ -905,12 +906,12 @@ get_objectProp <- function(image1, class1, xyDist){
         objprop$y <- append(objprop$y, floor(median(obj_index[, 2]))) #center row
         objprop$area <- append(objprop$area, length(obj_index[, 1]))
 
-        obj_class <- get_object_vertProfile(image1, class1, obj_label = obj) #class of convection for the object
+        #obj_class <- get_object_vertProfile(image1, class1, obj_label = obj) #class of convection for the object
 
         #store number of pixels with classification Cu_cong, Cu_deep, Cu_over etc.
-        objprop$Cu_cong <- append(objprop$Cu_cong, obj_class$Cu_cong)
-        objprop$Cu_deep <- append(objprop$Cu_deep, obj_class$Cu_deep)
-        objprop$Cu_over <- append(objprop$Cu_over, obj_class$Cu_over)
+        #objprop$Cu_cong <- append(objprop$Cu_cong, obj_class$Cu_cong)
+        #objprop$Cu_deep <- append(objprop$Cu_deep, obj_class$Cu_deep)
+        #objprop$Cu_over <- append(objprop$Cu_over, obj_class$Cu_over)
     }
     objprop <- attach_xyDist(objprop, xyDist$x, xyDist$y)
     invisible(objprop)
@@ -955,19 +956,22 @@ maxFlow_mag <- 5            #fft_flow will not be faster than this
 min_signif_movement <- 2    #not used at this time
 large_num <- 1000           #a large number for Hungarian method
 max_obs<- 100                #longest recoreded track (eles show error).
-min_size <- 2               #objects smaller than this will be filter
+min_size <- 25               #objects smaller than this will be filter
 max_desparity <- 15         # two objects with more desparity than this value, are not same.
 #==============================================================================#
+
+var_name<-"DBZc"
+
 
 #'Here we call the above functions to track convective echoes in the subsequent images.
 #+ echo=TRUE, eval=FALSE, warning=FALSE, error=FALSE, message=FALSE
 
-setwd("~/data/darwin_radar/2d/")
-file_list <- Sys.glob(paths = "./cpol_2D_????.nc")
+setwd("/home/bhupendra/data/netcdf_solapur/2dNC")
+file_list <- Sys.glob(paths = "./SolaRadar2d_lev3.nc")
 #file_list <- Sys.glob(paths = "./cpol_2D_2004-11-03.nc")
 
 for(infile_name in file_list){
-    outfile_name <- str_replace(infile_name, ".nc", "_tracks_V17-03.nc")
+    outfile_name <- str_replace(infile_name, ".nc", "_tracks_V18-02.nc")
     #outfile_name <- "~/Desktop/test_tracks.nc"
     print(paste("Opening output file", outfile_name))
 
@@ -981,11 +985,12 @@ for(infile_name in file_list){
 
 
     time <- ncvar_get(ncfile, varid="time")
-    time <- change_baseEpoch(time, From_epoch = as.Date("2004-01-01"))
+    #time <- change_baseEpoch(time, From_epoch = as.Date("2004-01-01"))
 
 
-    start_scan <- 1
-    end_scan <- length(time)
+    start_scan <- 79
+    print(paste("start scan = ", start_scan))
+    end_scan <- 100 #length(time)
 
     newRain <- TRUE         #is this new rainy scan after dry period?
 
@@ -998,23 +1003,24 @@ for(infile_name in file_list){
     #'
     #' frame1 <-- frame2 <-- next scan  (repeat)
     #+ echo=TRUE, eval=FALSE, warning=FALSE, error=FALSE, message=FALSE
-    frame2 <- get_filteredFrame(ncfile, start_scan, min_size)
-    class2 <- get_classFrame(ncfile, start_scan) #classifictaion
-
-
-    for(scan in (start_scan+1):end_scan){
-        setTxtProgressBar(pb, scan) #progress bar
+    #frame2 <- get_filteredFrame(ncfile, start_scan, min_size)
+    #class2 <- get_classFrame(ncfile, start_scan) #classifictaion
+    frame2 <- get_filteredFrame(ncfile, var_name, start_scan, min_size)
+    
+    for(scan_ind in (start_scan+1):end_scan){
+        setTxtProgressBar(pb, scan_ind) #progress bar
 
         # save earlier frame2 to frame1
         frame1 <- frame2
-        class1 <- class2
+        #class1 <- class2
 
         # and read next scan to frame2
-        frame2 <- get_filteredFrame(ncfile, scan, min_size)
-        class2 <- get_classFrame(ncfile, scan)
+        #frame2 <- get_filteredFrame(ncfile, scan, min_size)
+        #class2 <- get_classFrame(ncfile, scan)
+        frame2 <- get_filteredFrame(ncfile, var_name, scan_ind, min_size)
 
         #if this is the last scan make it zero. This kills all the objects.
-        if(scan==end_scan){
+        if(scan_ind==end_scan){
             frame2 <- replace(frame2, frame2>0, 0)
         }
 
@@ -1028,11 +1034,12 @@ for(infile_name in file_list){
 
             #write zeros for empty frames
             write_survival(outNC, survival_stat = rep(0, 4),
-                          time = time[scan], scan = scan)
+                          time = time[scan_ind], scan = scan_ind)
 
             next
         }
 
+        
         # track when echoes are present in frame1
         pairs <- get_matchPairs(frame1, frame2)
         obj_props <- get_objectProp(frame1, class1, list(x=x, y=y)) #of frame1
@@ -1046,11 +1053,11 @@ for(infile_name in file_list){
             survival <- c(rep(0, 2), num_obj1, num_obj1)
 
             #except for the first scan where values should be missing
-            if(scan==start_scan+1)
+            if(scan_ind==start_scan+1)
                 survival <- c(rep(-999, 3), num_obj1)
 
             write_survival(outNC, survival_stat = survival,
-                           time = time[scan-1], scan = scan-1)
+                           time = time[scan_ind-1], scan = scan_ind-1)
 
             newRain <- FALSE
 
@@ -1058,13 +1065,13 @@ for(infile_name in file_list){
             current_objects <- update_current_objects(frame1, frame2, pairs, current_objects)
         }
 
-        write_update(outNC, current_objects, obj_props, time[scan-1]) #for frame1
+        write_update(outNC, current_objects, obj_props, time[scan_ind-1]) #for frame1
 
         #Survival for frame2
         num_obj2 <- max(frame2)
         obj_survival <- survival_stats(pairs, num_obj2)
         write_survival(outNC, survival_stat = obj_survival,
-                       time = time[scan], scan = scan)
+                       time = time[scan_ind], scan = scan_ind)
     }
 
 
