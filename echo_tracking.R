@@ -82,26 +82,6 @@ get_filteredFrame <- function(ncfile, var_id, scan_num, min_size) {
     invisible(frame)
 }
 
-#' Returns a single radar scan of classification for given scan_num.
-#' Convective objects lebeled with vertical class 1=Cu_cong, 2=Cu_deep, 3=Cu_over
-get_classFrame <- function(ncfile, scan_num) {
-    echo_height <- get_convHeight(ncfile, scan_num)
-    get_vertical_class(echo_height) #returns this
-}
-
-
-#' Reads height and classification data and replaces non-convective and missing pixels with zero.
-get_convHeight <- function(ncfile, scan) {
-    dbz_height <- ncvar_get(ncfile, varid = "zero_dbz_cont",
-                            start = c(1, 1, scan), count = c(-1, -1, 1))
-
-    steiner <- ncvar_get(ncfile, varid = "steiner_class",
-                         start = c(1, 1, scan), count = c(-1, -1, 1))
-
-    dbz_height <-replace(dbz_height, steiner != 2, 0.0)      #set non-convective pixels to zeros
-    dbz_height <- replace(dbz_height, is.na(dbz_height), 0.0)     #remove NAs
-}
-
 
 #' Takes in labeled image removes objects smaller than min_size and returns re-labeled image.
 clear_smallEchoes <- function(label_image, min_size) {
@@ -116,28 +96,7 @@ clear_smallEchoes <- function(label_image, min_size) {
     invisible(label_image)
 }
 
-#' Given the convective height image, it returns vertical classification (Cu_cong=1, Cu_deep=2, Cu_over=3)
-get_vertical_class <- function(conv_height) {
-    #min max scan levels for classification
-    min_level <- c(5, 15, 31)
-    max_level <- c(14, 30, 40)
 
-    for(i in 1:length(min_level)){
-        conv_height <- replace(conv_height, conv_height>=min_level[i] &
-                                   conv_height<= max_level[i], i)
-    }
-    return(conv_height) #classified
-}
-
-
-#' Changes base epoch of 'time in seconds'. Default To_epoch is "1970-01-01.
-#' From_epoch should be in the format as.Date("2004-01-01").
-change_baseEpoch <- function(time_seconds, From_epoch, To_epoch=as.Date("1970-01-01")){
-    epoch_diff <- as.integer(From_epoch-To_epoch)
-    epoch_diff_seconds <- epoch_diff * 86400 #seconds in a day
-    time_newEpoch <- time_seconds + epoch_diff_seconds
-    return(time_newEpoch)
-}
 
 
 #' Given two images, the function identifies the matching
@@ -245,16 +204,6 @@ get_objExtent <- function(labeled_image, obj_label) {
     return(obj_extent)
 }
 
-
-#' Returns object_extent with number of pixel of each class for the given object.
-get_objClass_extent <- function(label_image, class_image, obj_label){
-    objExtent <- get_objExtent(label_image, obj_label)
-    #objClass <- get_object_vertProfile(label_image, class_image, obj_label)
-    #objExtent$Cu_cong <- objClass$Cu_cong
-    #objExtent$Cu_deep <- objClass$Cu_deep
-    #objExtent$Cu_over <- objClass$Cu_over
-    return(objExtent)
-}
 
 
 
@@ -615,10 +564,6 @@ write_update<-function(outNC, current_objects, obj_props, obs_time){
         ncvar_put(outNC, varid = "y_dist", obj_props$ydist[object], start = nc_start, count = nc_count)
 
         ncvar_put(outNC, varid = "area", obj_props$area[object],  start = nc_start, count = nc_count)
-
-        #ncvar_put(outNC, varid = "Cu_cong", obj_props$Cu_cong[object], start = nc_start, count = nc_count)
-        #ncvar_put(outNC, varid = "Cu_deep", obj_props$Cu_deep[object], start = nc_start, count = nc_count)
-        #ncvar_put(outNC, varid = "Cu_over", obj_props$Cu_over[object], start = nc_start, count = nc_count)
     }
 
     write_duration(outNC, current_objects)
@@ -918,14 +863,6 @@ get_objectProp <- function(image1, class1, xyDist){
 }
 
 
-#' Returns number of Cu_cong, Cu_deep and Cu_over type pixels in the given object.
-get_object_vertProfile <- function(label_image, class_image, obj_label){
-    obj_class <- class_image[label_image==obj_label]
-    nCu_cong <- length(obj_class[obj_class==1])
-    nCu_deep <- length(obj_class[obj_class==2])
-    nCu_over <- length(obj_class[obj_class==3])
-    return(list(Cu_cong = nCu_cong, Cu_deep = nCu_deep, Cu_over = nCu_over))
-}
 
 
 #' Attaches y and x distance from radar in km to object location indices
@@ -971,7 +908,7 @@ file_list <- Sys.glob(paths = "./SolaRadar2d_lev3.nc")
 #file_list <- Sys.glob(paths = "./cpol_2D_2004-11-03.nc")
 
 for(infile_name in file_list){
-    outfile_name <- str_replace(infile_name, ".nc", "_tracks_V18-02.nc")
+    outfile_name <- str_replace(infile_name, ".nc", "_tracks_testDelete.nc")
     #outfile_name <- "~/Desktop/test_tracks.nc"
     print(paste("Opening output file", outfile_name))
 
@@ -990,7 +927,7 @@ for(infile_name in file_list){
 
     start_scan <- 79
     print(paste("start scan = ", start_scan))
-    end_scan <- 100 #length(time)
+    end_scan <- 85 #length(time)
 
     newRain <- TRUE         #is this new rainy scan after dry period?
 
