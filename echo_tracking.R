@@ -120,6 +120,7 @@ get_matchPairs <- function(image1, image2) {
 #' Matches objects into pairs and removes bad matching.
 #' The bad matching is when disparity is more than the set value.
 match_pairs <- function(obj_match) {
+    obj_match[obj_match<0] <- 0
     pairs <- solve_LSAP(obj_match)
     pairs <- as.vector(pairs)
     # remove bad matching
@@ -132,7 +133,7 @@ match_pairs <- function(obj_match) {
 }
 
 
-#' Matches all the obejects in image1 to the objects in image 2.
+#' Matches all the obejects in image1 to the objects in image2.
 #' This is the main function to be called on two sets of radar images, for tracking.
 locate_allObjects <- function(image1, image2) {
     nObjects1 <- max(image1) #objects in first image
@@ -147,7 +148,7 @@ locate_allObjects <- function(image1, image2) {
 
     # here we match each object in image1 to all the near-by objects in image2.
     for(obj_id1 in 1:nObjects1) {
-        obj1_extent <- get_objExtent(image1, obj_id1) #location and radius
+        obj1_extent <- get_objExtent(image1, obj_id1) #location, ind and radius
         shift <- get_std_flowVector(obj1_extent, image1, image2, flow_margin, maxFlow_mag)
 
         if(exists("current_objects"))
@@ -358,7 +359,6 @@ find_objects <- function(search_box, image2) {
 #' no object is present.
 get_disparity_all <- function(obj_found, image2, search_box, obj1_extent) {
 
-
     if(is.na(obj_found[1]) || max(obj_found)==0) {
         obj_id2 <- 0
         dist_pred <- NA
@@ -395,27 +395,40 @@ save_objMatch <- function(obj_id1, obj_found, disparity, obj_match) {
 #' This parameter has most effect on the acccuracy of the tracks.
 get_disparity <- function(obj_found, image2, search_box, obj1_extent) {
     dist_pred <- c(NULL)
-    dist_actual <- c(NULL)
+    dist_initial <- c(NULL)
     change <- c(NULL)
+    overlap <- c(NULL)
     for(target_obj in obj_found){
         target_extent <- get_objExtent(image2, target_obj)
+        overlap_area <- check_bigOverlap(obj1_extent, target_extent)
+        overlap <- append(overlap, overlap_area)
 
         euc_dist<- euclidean_dist(target_extent$obj_center, search_box$center_pred)
         dist_pred <- append(dist_pred, euc_dist)
 
         euc_dist<- euclidean_dist(target_extent$obj_center, obj1_extent$obj_center)
-        dist_actual <- append(dist_actual, euc_dist)
+        dist_initial <- append(dist_initial, euc_dist)
         size_changed <- get_sizeChange(target_extent$obj_area, obj1_extent$obj_area) #change in size
         change <- append(change, size_changed)
 
-        #overlap <- obj_overlap(target_extent$obj_index, obj1_extent$obj_index)
     }
-
+    
     #This is crucial parameter that affect the results
-    disparity <- dist_pred + change # + dist_actual
+    disparity <- dist_pred + change + dist_initial - overlap
+
+
     return(disparity)
 }
 
+#' Checks overlapping area in pixels, size of the object and return if overlapping is considerable.
+check_bigOverlap <- function(obj_extend, target_extend){
+    duplicates <- duplicated(rbind(obj_extend$obj_index, target_extend$obj_index))
+    overlap_area <- length(duplicates[duplicates==TRUE])
+    if(obj_extend$obj_area > big_obj_size & overlap_area >= obj_extend$obj_area/2){
+        return(overlap_area)
+    } else 
+        return(0)
+}
 
 #' Returns  Euclidean distance between two vectors or matrices.
 euclidean_dist <- function(vec1, vec2){
@@ -840,7 +853,7 @@ next_uid<-function(count=1){
 
 #' Return all the object's size, location and classification info,
 #' xyDist should be a list of x_dist and y_dist in km.
-get_objectProp <- function(image1, class1, xyDist){
+get_objectProp <- function(image1, xyDist){
     objprop <- c(NULL)
     nobj <- max(image1)
 
@@ -850,13 +863,6 @@ get_objectProp <- function(image1, class1, xyDist){
         objprop$x <- append(objprop$x, floor(median(obj_index[, 1]))) #center column
         objprop$y <- append(objprop$y, floor(median(obj_index[, 2]))) #center row
         objprop$area <- append(objprop$area, length(obj_index[, 1]))
-
-        #obj_class <- get_object_vertProfile(image1, class1, obj_label = obj) #class of convection for the object
-
-        #store number of pixels with classification Cu_cong, Cu_deep, Cu_over etc.
-        #objprop$Cu_cong <- append(objprop$Cu_cong, obj_class$Cu_cong)
-        #objprop$Cu_deep <- append(objprop$Cu_deep, obj_class$Cu_deep)
-        #objprop$Cu_over <- append(objprop$Cu_over, obj_class$Cu_over)
     }
     objprop <- attach_xyDist(objprop, xyDist$x, xyDist$y)
     invisible(objprop)
@@ -894,7 +900,8 @@ min_signif_movement <- 2    #not used at this time
 large_num <- 1000           #a large number for Hungarian method
 max_obs<- 100                #longest recoreded track (eles show error).
 min_size <- 25               #objects smaller than this will be filter
-max_desparity <- 15         # two objects with more desparity than this value, are not same.
+max_desparity <- 20         # two objects with more desparity than this value, are not same.
+big_obj_size <- 25
 #==============================================================================#
 
 var_name<-"DBZc"
@@ -927,7 +934,7 @@ for(infile_name in file_list){
 
     start_scan <- 79
     print(paste("start scan = ", start_scan))
-    end_scan <- 85 #length(time)
+    end_scan <- 100 #length(time)
 
     newRain <- TRUE         #is this new rainy scan after dry period?
 
@@ -979,7 +986,7 @@ for(infile_name in file_list){
         
         # track when echoes are present in frame1
         pairs <- get_matchPairs(frame1, frame2)
-        obj_props <- get_objectProp(frame1, class1, list(x=x, y=y)) #of frame1
+        obj_props <- get_objectProp(frame1, list(x=x, y=y)) #of frame1
 
         #when echoes are found in frame1 and it is newRain, init uids
         if(newRain){
@@ -1007,8 +1014,7 @@ for(infile_name in file_list){
         #Survival for frame2
         num_obj2 <- max(frame2)
         obj_survival <- survival_stats(pairs, num_obj2)
-        write_survival(outNC, survival_stat = obj_survival,
-                       time = time[scan_ind], scan = scan_ind)
+        write_survival(outNC, survival_stat = obj_survival, time = time[scan_ind], scan = scan_ind)
     }
 
 
