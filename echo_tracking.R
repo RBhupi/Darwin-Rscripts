@@ -50,7 +50,9 @@ library(clue)     #solve_LSAP() assignment problem
 #+ echo=FALSE
 #----------------------------------------------------------------------functions
 
-#' Plots image with objects labels. This is used to test images when processed 1-by-1.
+#' Plots image with objects labels. 
+#' 
+#' This is used in development stage to test images when processed 1-by-1.
 plot_objects_label <- function(labeled_image, xvalues, yvalues){
     image2D(replace(labeled_image, labeled_image==0, NA), x=xvalues, y=yvalues)
     grid()
@@ -72,9 +74,15 @@ plot_objects_label <- function(labeled_image, xvalues, yvalues){
     }
 }
 
-#' Returns a single radar scan from the netcdf file.
+#' Returns a single radar scan from the input netcdf file.
+#' 
 #' Smaller objects are removed and the rest are lebeled.
-get_filteredFrame <- function(ncfile, var_id, scan_num, min_size) {
+#' @param ncfile input netcdf file object from ncdf4 package.
+#' @param var_id string name of the varibale in the file.
+#' @param scan_num index of frame to be read from the file.
+#' @param min_size in pixels objects smaller than this will be removed. Default 2.
+#' @export
+get_filteredFrame <- function(ncfile, var_id, scan_num, min_size=2) {
     frame <- ncvar_get(nc=ncfile, varid = var_id, 
                         start = c(1, 1, scan_num), count = c(-1, -1, 1))
     labeled_echo <- bwlabel(frame)          #label objects
@@ -83,7 +91,10 @@ get_filteredFrame <- function(ncfile, var_id, scan_num, min_size) {
 }
 
 
+#' Removed objects smaller than the given size.
+#' 
 #' Takes in labeled image removes objects smaller than min_size and returns re-labeled image.
+#' Pixels attached diagonally are not considered as continuouse part of the object. 
 clear_smallEchoes <- function(label_image, min_size) {
     size_table <- table(label_image[label_image>0]) # remove zero values
     onePix_objects <- as.numeric(names(which(size_table < min_size)))
@@ -98,9 +109,13 @@ clear_smallEchoes <- function(label_image, min_size) {
 
 
 
-
-#' Given two images, the function identifies the matching
-#' objects and pair them appropriatly. See disparity function.
+#'returns pairs of object ids from both frames.
+#'
+#' Given two images, the function identifies the matching 
+#' objects and pair them appropriatly using Hungarian method and desparity. 
+#' 
+#' @export
+#' @seealso  code{disparity function}.
 get_matchPairs <- function(image1, image2) {
     nObjects1 <- max(image1) #objects in first image
     nObjects2 <- max(image2) #objects in second image
@@ -118,6 +133,7 @@ get_matchPairs <- function(image1, image2) {
 }
 
 #' Matches objects into pairs and removes bad matching.
+#' 
 #' The bad matching is when disparity is more than the set value.
 match_pairs <- function(obj_match) {
     obj_match[obj_match<0] <- 0
@@ -134,6 +150,7 @@ match_pairs <- function(obj_match) {
 
 
 #' Matches all the obejects in image1 to the objects in image2.
+#' 
 #' This is the main function to be called on two sets of radar images, for tracking.
 locate_allObjects <- function(image1, image2) {
     nObjects1 <- max(image1) #objects in first image
@@ -166,6 +183,8 @@ locate_allObjects <- function(image1, image2) {
 }
 
 
+#' FFT shifts are corrected using last headings.
+#' 
 #' takes in flow vector based shift and current_object dataframe which has last
 #' headings, and check if they are resonably close if not rejects or modify shift and return.
 #' Note:  frame2 of last timestep is now frame1, but current_objects still has it as frame2.
@@ -183,6 +202,8 @@ correct_shift<-function(this_shift, current_objects, object_id1){
 }
 
 
+#' Returns object extent properties.
+#' 
 #' Takes in a labeled image and finds the radius, area and the center of the given object.
 get_objExtent <- function(labeled_image, obj_label) {
     #center indices of the object assuming it is a rectangle
@@ -208,7 +229,9 @@ get_objExtent <- function(labeled_image, obj_label) {
 
 
 
-#' Takes in object info (radius and center) and two images to estimate ambient flow.
+#' Computes flow in the vicinity of the object.
+#' 
+#' Takes in object info (radius and center) and two images to estimate ambient flow using FFT phase correlation.
 #' Margin is the additional region arround the object used to comput the flow vectors.
 get_objAmbientFlow <- function(obj_extent, img1, img2, margin) {
     #coordinates of the flowregion
@@ -230,7 +253,8 @@ get_objAmbientFlow <- function(obj_extent, img1, img2, margin) {
 
 
 #' Alternative to get_objAmbientFlow.
-#' Flow vectors magnitude is clipped to given magnitude
+#' 
+#' Flow vectors magnitude is clipped to given magnitude to controll erratic output from FFT flow.
 get_std_flowVector<-function(obj_extent, img1, img2, margin, magnitude){
     shift <- get_objAmbientFlow(obj_extent, img1, img2, margin)
     shift <- replace(shift, shift > magnitude, magnitude)
@@ -279,6 +303,8 @@ fft_crossCov <- function (img1, img2) {
 }
 
 
+#' Rearranges the crossCov matrix 
+#' 
 #' Rearranges the crossCov matrix so that 'zero' frequency or DC component
 #'  is in the middle of the matrix. Taken from stackoverflow Que. 30630632
 fft_shift <- function(fft_mat) {
@@ -304,6 +330,8 @@ fft_shift <- function(fft_mat) {
 }
 
 
+#' predict search region.
+#' 
 #' Predicts search extent/region for the object in image2 given the image shift.
 predict_searchExtent <- function(obj1_extent, shift, search_radius){
     shifted_center <- obj1_extent$obj_center + shift
@@ -317,6 +345,8 @@ predict_searchExtent <- function(obj1_extent, shift, search_radius){
 }
 
 
+#' checks that the search box is in the domain.
+#' 
 #' Returns NA if search box  outside the image or search box is very small.
 check_searchBox <- function(search_box, img_dims){
 
@@ -342,7 +372,9 @@ check_searchBox <- function(search_box, img_dims){
 }
 
 
-#' Given the search box and image2, returns objects in the region
+#' Returns vector of objects ids in the given reion.
+#' 
+#' Given the search box and image2, returns objects in the region.
 find_objects <- function(search_box, image2) {
     #if search box is NA then object left the image
     if(is.na(search_box[1])){
@@ -355,6 +387,8 @@ find_objects <- function(search_box, image2) {
 }
 
 
+#' Returns Disparity of all the objects in the region.
+#' 
 #' Returns disparities of all the objects found within the search box or NA if
 #' no object is present.
 get_disparity_all <- function(obj_found, image2, search_box, obj1_extent) {
@@ -379,6 +413,8 @@ get_disparity_all <- function(obj_found, image2, search_box, obj1_extent) {
 }
 
 
+#' Corrects and saves disparity for the object matching stage.
+#' 
 #' If disparity is large then it saves a large number for the value to reduce
 #' the chances of this pairing to zero, else it save the value in the obj_match array.
 save_objMatch <- function(obj_id1, obj_found, disparity, obj_match) {
@@ -391,7 +427,9 @@ save_objMatch <- function(obj_id1, obj_found, disparity, obj_match) {
 }
 
 
-#' Computes disparity for a single object. Check how it is computed for detail.
+#' Actually computes desparity for a single object.
+#' 
+#' Check how it is computed for detail.
 #' This parameter has most effect on the acccuracy of the tracks.
 get_disparity <- function(obj_found, image2, search_box, obj1_extent) {
     dist_pred <- c(NULL)
@@ -420,6 +458,8 @@ get_disparity <- function(obj_found, image2, search_box, obj1_extent) {
     return(disparity)
 }
 
+#' checks overlapping regoin for big objects in both the frames.
+#' 
 #' Checks overlapping area in pixels, size of the object and return if overlapping is considerable.
 check_bigOverlap <- function(obj_extend, target_extend){
     duplicates <- duplicated(rbind(obj_extend$obj_index, target_extend$obj_index))
@@ -430,12 +470,16 @@ check_bigOverlap <- function(obj_extend, target_extend){
         return(0)
 }
 
+#' standard Euclidean distance.
+#' 
 #' Returns  Euclidean distance between two vectors or matrices.
 euclidean_dist <- function(vec1, vec2){
     sqrt(sum((vec1-vec2)^2))
 }
 
 
+#' returns size change between the frames.
+#' 
 #' Returns change in size of the eacho as ratio of bigger number to smaller
 #' number when given two number, minus 1.
 get_sizeChange<-function(x, y){
@@ -449,7 +493,13 @@ get_sizeChange<-function(x, y){
 
 
 
-#' Creates output netcdf file for radar echo trajectories. This is the longest function.
+
+#' Creates output netcdf file for radar echo trajectories. 
+#'
+#' This is the longest function.
+#' @param ofile name and path of the output file.
+#' @param max_obs longest possible track record. Deafult maximum 65 observation per track.
+#' @export
 create_outNC <- function(ofile, max_obs) {
     if(file.exists(ofile)){
         print(paste("removing existing file", basename(ofile)))
@@ -550,8 +600,9 @@ create_outNC <- function(ofile, max_obs) {
 }
 
 
-#' Writes all the setting parameters (as attributes) for the tracking. These parameters affect
-#' the sensitivity of the tracks, mergers and split definitions etc.
+#' Writes all the setting parameters (as attributes) for the tracking. 
+#' 
+#' These parameters affect the sensitivity of the tracks, mergers and split definitions etc.
 write_settingParms_toNC <- function(outNC){
     ncatt_put(outNC, varid = 0, attname = "search_margin", attval =search_margin, prec = "short")
     ncatt_put(outNC, varid = 0, attname = "flow_margin", attval =flow_margin, prec = "short")
@@ -563,6 +614,12 @@ write_settingParms_toNC <- function(outNC){
 
 
 #' Writes properties and uids for all objects into output netcdf file.
+#' 
+#' @param outNC output netcdf file object from function \code{create_outNC()}
+#' @param current_objects output of \code{update_current_objects}
+#' @param obj_props output of \code{get_object_prop()}
+#' @param obs_time time of first scan in POSIX format. units="seconds since 1970-01-01".
+#' @export
 write_update<-function(outNC, current_objects, obj_props, obs_time){
     nobj <- length(current_objects$id1) #num of objects in frame1
 
@@ -583,7 +640,9 @@ write_update<-function(outNC, current_objects, obj_props, obs_time){
 }
 
 
-#' Writes number of observations for dead objects.
+#' Write duration of dead objects in output NC file.
+#' 
+#' Writes number of observations for dead objects. Duration is in time-steps.
 write_duration <- function(outNC, current_objects){
     nobj <- length(current_objects$id1)
 
@@ -603,6 +662,8 @@ write_duration <- function(outNC, current_objects){
 }
 
 
+#' Checks possible merging of the dead objects.
+#'
 #'This function takes in two R-lists containing information about current objects
 #' in the frame1 and their properties, such as center location and area. If the
 #' I am using an arbitrary crieterion for merging. If euclidean distance between centers
@@ -640,7 +701,11 @@ check_merging<-function(dead_obj_id1, current_objects, object_props){
 }
 
 
-#' Write survival stats (number of lived, dead and born objects) to the file for each scan.
+#' Write survival stats 
+#' 
+#' write number of lived, dead and born objects to the file for each scan.
+#' 
+#' @export
 write_survival <- function(outNC, survival_stat, time, scan){
     if(!is.atomic(survival_stat)){
         survival_stat <- unlist(survival_stat, use.names = FALSE)
@@ -652,7 +717,12 @@ write_survival <- function(outNC, survival_stat, time, scan){
 
 
 #' Returns a dataframe for objects with unique ids and their corresponding ids in frame1 and frame2.
+#' 
 #' This function is called when new rainy scan is seen after the period of no rain or the first time.
+#' @param first_frame First image for tracking.
+#' @param second_frame Second image for tracking.
+#' @param pairs output of \code{get_match_pairs()}
+#' @export
 init_uids <- function(first_frame, second_frame, pairs){
     nobj <- max(first_frame) #number of objects in frame1
     objects_mat <- matrix(data = NA, ncol = 5, nrow = nobj)
@@ -670,6 +740,8 @@ init_uids <- function(first_frame, second_frame, pairs){
 }
 
 
+#' saves last x y movements of the objects.
+#' 
 #' Attaches last xyheads to current objects for future use.
 attach_xyheads <- function(frame1, frame2, current_objects) {
 
@@ -691,7 +763,10 @@ attach_xyheads <- function(frame1, frame2, current_objects) {
 }
 
 
-#' Returns index of center pixel of the given object id from a labeled image.
+#' return center indices of the object.
+#' 
+#' Returns indices of center pixel of the given object id from a labeled image. 
+#' This may be done in better way for non-oval objects.
 get_objectCenter<-function(obj_id, labeled_image){
     obj_index <- which(labeled_image==obj_id, arr.ind = TRUE)
     center_x <- floor(median(obj_index[, 1])) #center column
@@ -700,13 +775,13 @@ get_objectCenter<-function(obj_id, labeled_image){
 }
 
 
-#'
 #' Removes dead objects, updates living objects and assign new uids to new born objects.
+#' 
 #' Also, updates number of valid observations for each echo.
 #' This function is called when rain continues from the last frame.
 #' This is a complicated function to understand.
 #'
-#' See how the pairs vector looks like for a real case. The pairs
+#' @details See how the pairs vector looks like for a real case. The pairs
 #' shows mapping of the current frame1 and frame2. This shows that frame2 has 4 objects.
 #' The objects [1, 2, 3, 4] in current frame2 are mapped with objects [0, 1, 2, 3]
 #' in current frame1. Thus, object 1 in frame2 is new born. Others can be traced back to
@@ -734,6 +809,7 @@ get_objectCenter<-function(obj_id, labeled_image){
 #' For object 2 and 4 in current frame2 which do not exist in frame1,
 #' we will ask for new uids. This information will be written  in
 #' current_objects and return for writting in to the output file.
+#' @export
 update_current_objects <- function(frame1, frame2, pairs, old_objects){
     nobj <- max(frame1)
     objects_mat <- matrix(data = NA, ncol = 5, nrow = nobj)
@@ -762,6 +838,8 @@ update_current_objects <- function(frame1, frame2, pairs, old_objects){
 }
 
 
+#' Find id of the parent of the new born object.
+#' 
 #' returns unique id of the origin (or zero) for given object in frame1.
 #' Also remember that old object id2 is actual id1 in frame1, as we still have
 #' to update the object_ids.
@@ -780,6 +858,8 @@ get_origin_uid<-function(obj, frame1, old_objects){
 }
 
 
+#' Checks for parent in the vicinity.
+#' 
 #' This function checks near by objects in the frame for the given new-born object.
 #' origin is an object which existed before the new born objects,
 #' has comparable or larger size and is close enough to the offspring.
@@ -843,6 +923,8 @@ find_origin <- function(id1_newObj, frame1){
 }
 
 
+#' 
+#' 
 #' Returns sequence of next unique ids and increament the uid_counter.
 next_uid<-function(count=1){
     this_uid <- uid_counter + 1:count
@@ -851,8 +933,10 @@ next_uid<-function(count=1){
 }
 
 
-#' Return all the object's size, location and classification info,
+#' Return all the object's size, location and classification info.
+#' 
 #' xyDist should be a list of x_dist and y_dist in km.
+#' @export
 get_objectProp <- function(image1, xyDist){
     objprop <- c(NULL)
     nobj <- max(image1)
@@ -871,6 +955,8 @@ get_objectProp <- function(image1, xyDist){
 
 
 
+#' 
+#' 
 #' Attaches y and x distance from radar in km to object location indices
 attach_xyDist<-function(obj_props, xdist, ydist){
     obj_props$xdist <- xdist[obj_props$x]
@@ -879,7 +965,9 @@ attach_xyDist<-function(obj_props, xdist, ydist){
 }
 
 
-#' Returns a list with number of objects lived, died and born between this step and the next one.
+#' Returns a list with number of objects lived, died and born between the current and the previousstep.
+#' 
+#' @export
 survival_stats <- function(pairs, num_obj2) {
     pairs_vec <- as.vector(pairs)
     obj_lived <- length(pairs_vec[pairs_vec>0])

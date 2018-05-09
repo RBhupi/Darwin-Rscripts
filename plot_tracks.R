@@ -81,7 +81,7 @@ plot_track_lines <- function(incf_tracks, track_ids){
 
 setwd("~/data/netcdf_solapur/2dNC/")
 #read tracks
-ifile_tracks <- "./SolaRadar2d_lev3_tracks_V18-02.nc"
+ifile_tracks <- "./SolaRadar2d_lev3_tracks_testDelete.nc"
 incf_tracks  <- nc_open(ifile_tracks)
 
 tracks <-  ncvar_get(incf_tracks, varid ="echo_id")
@@ -89,7 +89,7 @@ ntracks <- length(tracks)
 
 
 #read radar data
-ifile_radar <- "./SolaRadar2d_lev3_dbz.nc" #a file for a season
+ifile_radar <- "./SolaRadar2d_lev3.nc" #a file for a season
 ntime <- 20
 start_scan<-79
 start_x <- 150
@@ -98,8 +98,8 @@ count_x <- 250
 count_y <- 250
 
 incf_radar <- nc_open(ifile_radar)
-x <- ncvar_get(incf_radar, varid="x", start = start_x, count=count_xy)
-y <- ncvar_get(incf_radar, varid="y", start = start_y, count = count_xy)
+x <- ncvar_get(incf_radar, varid="x", start = start_x, count=count_x)
+y <- ncvar_get(incf_radar, varid="y", start = start_y, count = count_x)
 time <- ncvar_get(incf_radar, varid = "time", start = start_scan, count = ntime)
 #time <- change_baseEpoch(time, From_epoch =as.Date("2004-01-01"))
 time_posix <- as.POSIXct(time, origin = "1970-01-01", tz="UTC")
@@ -108,7 +108,7 @@ time_posix <- as.POSIXct(time, origin = "1970-01-01", tz="UTC")
 
 #read the data 
 dbz <- ncvar_get(incf_radar, varid= "DBZc", start = c(start_x, start_y, start_scan), 
-                 count = c(count_xy, count_xy, ntime))
+                 count = c(count_x, count_x, ntime))
 
 
 colors <- rev(brewer.pal(name = "YlGnBu", n=7))
@@ -136,5 +136,5 @@ for(scan in 1:ntime) {
     grid(lwd=2, lty = 2)
     points(x=0, y=0, pch="+")
 }
-}, movie.name = "tracks_SolaRadar.gif", interval = 0.5)
+}, movie.name = "tracks_SolaRadar_test.gif", interval = 0.5)
 
